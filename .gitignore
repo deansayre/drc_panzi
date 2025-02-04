@@ -1,0 +1,12 @@
+.Rproj.user
+
+*.docx
+*.xlsx
+*.pdf
+*.msg
+*.png
+*.pptx
+
+data/
+case_confirmed_5_plus/
+case_confirmed_cu5/
