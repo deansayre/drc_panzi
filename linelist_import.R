@@ -79,7 +79,7 @@ data_1a <- data %>%
    # single entry when go to change pull individuals from these lists
 
 
-data_char <- data_1a
+data_char <- data_1a %>% 
   select(where(is.character)) %>% 
   select(-c(nom_et_postnom))
 
@@ -548,19 +548,39 @@ scatter_by_week <- hf_graphics %>%
 
 geo_codes_dhis2 <- rio::import("C:/Users/omp2/OneDrive - CDC/mgd/drc/geoFeatures_2025-01-19.rds")
 
-temp <- geo_codes_dhis2 %>% 
+zds <- geo_codes_dhis2 %>% 
   sf::st_drop_geometry() %>% 
-  filter(levelName == "Zone de Sante" & str_detect(name, "Panzi"))
+  filter(levelName == "Zone de Sante" & str_detect(name, "Panzi")) %>% 
+  sf::st_as_sf()
 
 # name as 'Panzi Zone de Santé'
 
 temp <- geo_codes_dhis2 %>% 
   sf::st_drop_geometry() %>% 
-  filter(str_detect(parentName, "Panzi"))
+  filter(str_detect(parentName, "Panzi")) %>% 
+  filter(level ==4) %>% 
+  sf::st_as_sf()
+
+temp2 <- geo_codes_dhis2 %>% 
+  sf::st_drop_geometry() %>% 
+  mutate(child_graph = word(parentGraph, -1, sep = "/")) %>% 
+  filter(child_graph %in% temp$id) %>% 
+  sf::st_as_sf()
+
+tmap::tm_shape(temp)+
+  tmap::tm_borders()+
+  tmap::tm_shape(zds)+
+  tmap::tm_borders()+
+  tmap::tm_shape(temp2)+
+  tmap::tm_dots()
+
+
 
 temp1 <- geo_codes_dhis2 %>% 
   sf::st_drop_geometry() %>% 
   filter(str_detect(parentName, "sk"))
+
+
 
 # there is another Aire de Sante called Panzi in the 
   
