@@ -42,6 +42,8 @@ hf_dhis2 <- rio::import("dhis2_hf_names.xlsx") %>%
   ) %>% 
   fill(`kg Panzi Zone de Santé`, .direction = "down") %>% 
   filter(!is.na(hf))
+
+rio::export(hf_dhis2, file = "hf_all_dhis2.xlsx")
          
 
 ######################################### number missing observations ##########

@@ -20,8 +20,7 @@ output:
 knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
 ```
 
-# Introduction
-
+# Data importation and cleaning
 
 ```{r}
 
@@ -109,7 +108,7 @@ missing_obs <- map(b, ~nrow(.x)) %>%
   add_column(Variable = names(data), 
              .before = 1) %>% 
   rename(`Observations Missing` = value) %>% 
-  filter(variable != "id")
+  filter(Variable != "id")
 
 
 rm(b)
@@ -306,7 +305,9 @@ dupes
 
 ## Processing complication and treatment data
 These data are entered as free text. Here they are standardized and processed
-so as to be more useable.
+so as to be more useable. New variables for "any artemisinin received", "any 
+antimalarial received" (artemisinin or quinine), and "any antibiotic received"
+are created.
 
 ```{r}
 
@@ -346,7 +347,9 @@ treatment_list <- datatx_sp %>%
   rowwise() %>% 
   mutate(tx1 = paste(unlist(tx), collapse = "_"))
 
-unique(datatx_sp$tx_list)
+
+
+#unique(datatx_sp$tx_list)
 
 data4 <- left_join(data3, treatment_list, by = "n") %>% 
   select(-tratement) %>% 
@@ -358,7 +361,9 @@ data4 <- left_join(data3, treatment_list, by = "n") %>%
                                           "asaq", 
                                           "artemether"),
                                         function(x) str_detect(tx1, fixed(x)))),
-         any_artemisinins = any(any_artemisinins_a == TRUE), 
+         any_artemisinins = any(any_artemisinins_a == TRUE),
+         any_antimalarial = case_when(any_artemisinins == TRUE | str_detect(tx1, "quinine") ~ TRUE, 
+                                      .default = FALSE),
          any_abx_a = list(map(c("amoxicilline", 
                                 "azithromycine", 
                                 "ceftriaxone", 
@@ -369,7 +374,6 @@ data4 <- left_join(data3, treatment_list, by = "n") %>%
          any_abx = any(any_abx_a == TRUE), 
          complications = str_replace_all(complications, "broncho_pulmonaire", 
                                          "broncho.pulmonaire"))
-
 
 
 
@@ -411,57 +415,51 @@ comp_list <- data_comp_sp %>%
   rowwise() %>% 
   mutate(tx1 = paste(unlist(comp), collapse = "_"))
 
-unique(data_comp_sp$list)
+#unique(data_comp_sp$list)
 
-data5 <- left_join(data4, comp_list, by = "n")
-
-################################################################################
-
-
-############################################## clinical presentation ###########
+data5 <- left_join(data4, comp_list, by = "n") %>% 
+  ungroup()
 
 
-# meets case definition? revision of case definition?
+comp_spell_dl <- complications_spelling %>% 
+ downloadthis::download_this(
+    output_name = "complication_spell_changes",
+    output_extension = ".xlsx",
+    button_label = "Complications Changes",
+    button_type = "default",
+    has_icon = TRUE,
+    icon = "fa-regular fa-arrow-down-to-line")
 
 
-sympt_specific_out <- function(x, db){
-  y <- sym(x)
-  a <- db %>% 
-    filter({{y}} == "oui") %>% 
-    summarise(nombre = n(), 
-              tpr = round(100*sum(tdr1 == "positif", na.rm = TRUE)/(sum(tdr1 == "negatif", 
-                                                                        na.rm = TRUE) + 
-                                                                      sum(tdr1 == "positif",
-                                                                          na.rm = TRUE)),1),
-              taux_mortalite = round(100*sum(evolution == "decede", na.rm = TRUE)/(sum(evolution != "decede", 
-                                                                                       na.rm = TRUE)+sum(evolution == "decede", na.rm = TRUE)),2))
-  
-  return(a)
-  }
+tx_spell_dl <- treatment_spelling %>% 
+ downloadthis::download_this(
+    output_name = "treatment_spell_changes",
+    output_extension = ".xlsx",
+    button_label = "Treatment Changes",
+    button_type = "default",
+    has_icon = TRUE,
+    icon = "fa-regular fa-arrow-down-to-line")
+
+```
 
 
-a <- map(names(data3[14:30]), ~sympt_specific_out(.x, data3)) %>% 
-  set_names(names(data3[14:30])) %>% 
-  list_rbind(names_to = "presentation")
+```{r echo = FALSE}
 
-rio::export(a, "outcome_par_symptom.xlsx")
+tx_spell_dl
+comp_spell_dl
 
-a_flex <- a %>% 
-  mutate(presentation = str_to_title(str_replace_all(presentation, "_", " "))) %>% 
-  arrange(-nombre) %>% 
-  rename("Symptômes" = presentation, 
-         "Nombre de Cas" = nombre, 
-         "Taux de positivité - TDR (%)" = tpr, 
-         "Taux de mortalité (%)" = taux_mortalite) %>% 
-  flextable::flextable() %>% 
-  flextable::colformat_num(big.mark = "", digits = 1) %>% 
-  flextable::autofit()
+```
 
-flextable::save_as_docx(a, path = paste0(here::here("linelist", 
-                                                    "output", 
-                                                    "symptom_outcome_all.docx")))
 
-outcome_by_presentation <- data3 %>% 
+# Presentation and outcomes of patients
+Additional information on patient presentation is provided in subsequent 
+sections. This portion serves to ensure that all individuals included in the
+data set meet the case definition. 
+
+
+```{r include = FALSE}
+
+outcome_by_presentation <- data5 %>% 
   select(n, 14:30) %>% 
   pivot_longer(-n) %>% 
   filter(value == "oui") %>% 
@@ -517,6 +515,141 @@ map2(symptom_combos_flex,
      function(x, y){flextable::save_as_docx(x, path = paste0(here::here("linelist", 
                                                                         "output"), "/", y, ".docx"))
      })
+
+
+```
+
+
+There are `r sum(symptom_combos[[3]]$nombre, na.rm = TRUE)` patients that were 
+listed without _either_ fever or cough. Clinical presentations, counts, malaria
+RDT test positivity rate, and case fatality rates are listed below. 
+
+```{r}
+
+symptom_combos_flex[[3]]
+
+```
+
+Given the mortality rate in this group to date, some revision of the case 
+definition is advised to further hone in on the population of interest. (These
+individuals are retained for the following analyses.)
+
+
+# Patient demographics
+
+```{r}
+
+data5_a <- data5 %>% 
+  mutate(decede_non = case_when(is.na(evolution) ~ NA_character_, 
+                                evolution == "decede" ~ "decede", 
+                                .default = "non_decede"), 
+         age_cat1 = cut(age_years, c(0, 2, 5, 15, Inf)),
+         age_cat2 = cut(age_years, c(0, 5, Inf)),
+         age_cat3 = cut(age_years, c(0,2,5,15,25,35,45,55,65,Inf)),
+         duration_symp_consult = lubridate::time_length(interval(date_debut_des_signes,
+                                                                 date_de_consultation), 
+                                                        "days"), 
+         consult_pre_dec01 = case_when(date_de_consultation < "2024-12-01" ~ "pre_12_01", 
+                                       date_de_consultation >= "2024-12-01" ~ "post_12_01", 
+                                       is.na(date_de_consultation) ~ NA_character_, 
+                                       .default = "error"), 
+         year_week_factor = factor(paste(week), levels = unique(data2$week)))
+
+deces_5 <- data5_a %>% 
+  filter(evolution == "decede")
+
+age_pyr <- map(list(data5_a, deces_5),
+               ~.x %>% 
+  filter(!is.na(sexe)) %>% 
+  group_by(age_cat3, sexe) %>% 
+  summarise(count = n()) %>% 
+  ungroup() %>% 
+  mutate(count = ifelse(sexe == "f", -1*count, count)) %>% 
+    ggplot()+
+  geom_col(aes(x = age_cat3, y = count, fill = sexe))+
+  scale_fill_manual(values = c("coral2", "cadetblue"))+
+    theme_minimal()+
+  coord_flip()+
+    labs(x = "Count", 
+         y = "Age category")+
+    scale_y_continuous(labels = function(x) abs(x))
+    
+)
+
+age_pyr[[2]]
+
+prop_var <- list("age_cat1",
+                 "age_cat2", 
+                 "sexe", 
+                 "as",
+                 "fievre",
+                 "toux", 
+                 "consult_pre_dec01")
+
+demo_prop_list <- map(prop_var, function(x){
+           y <- sym(x)
+           a <- data5_a %>%
+             group_by(decede_non, {{y}}) %>% 
+             summarise(count = n()) %>% 
+             pivot_wider(names_from = "decede_non", 
+                         values_from = "count") %>% 
+             rename(category = 1)
+
+         return(a)
+         }
+         ) %>% 
+  set_names(prop_var) %>% 
+  list_rbind(names_to = "element") %>% 
+  mutate(across(c(decede, non_decede), ~replace_na(.x, 0))) %>% 
+  mutate(total = rowSums(select(., decede, non_decede)), 
+         cfr = round(100*decede/total, 1))
+  
+```
+
+
+
+```{r}
+
+
+sympt_specific_out <- function(x, db){
+  y <- sym(x)
+  a <- db %>% 
+    ungroup() %>% 
+    filter({{y}} == "oui") %>% 
+    summarise(nombre = n(), 
+              tpr = round(100*sum(tdr1 == "positif", na.rm = TRUE)/(sum(tdr1 == "negatif", 
+                                                                        na.rm = TRUE) + 
+                                                                      sum(tdr1 == "positif",
+                                                                          na.rm = TRUE)),1),
+              taux_mortalite = round(100*sum(evolution == "decede", na.rm = TRUE)/(sum(evolution != "decede", 
+                                                                                       na.rm = TRUE)+sum(evolution == "decede", na.rm = TRUE)),2)
+              )
+  
+  return(a)
+  }
+
+
+a <- map(names(data5[14:30]), ~sympt_specific_out(.x, data5)) %>% 
+  set_names(names(data5[14:30])) %>% 
+  list_rbind(names_to = "presentation")
+
+rio::export(a, "outcome_par_symptom.xlsx")
+
+a_flex <- a %>% 
+  mutate(presentation = str_to_title(str_replace_all(presentation, "_", " "))) %>% 
+  arrange(-nombre) %>% 
+  rename("Symptômes" = presentation, 
+         "Nombre de Cas" = nombre, 
+         "Taux de positivité - TDR (%)" = tpr, 
+         "Taux de mortalité (%)" = taux_mortalite) %>% 
+  flextable::flextable() %>% 
+  flextable::colformat_num(big.mark = "", digits = 1) %>% 
+  flextable::autofit()
+
+flextable::save_as_docx(a, path = paste0(here::here("linelist", 
+                                                    "output", 
+                                                    "symptom_outcome_all.docx")))
+
 
 
 
