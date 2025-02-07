@@ -34,6 +34,16 @@ lab_2 <- rio::import(here::here("linelist", "lab_linelist.xlsx"), which = 2) %>%
 lab <- bind_rows(lab_1, lab_2) %>% 
   filter(!is.na(noms))
 
+hf_dhis2 <- rio::import("dhis2_hf_names.xlsx") %>% 
+  mutate(hf = case_when(str_detect(`kg Panzi Zone de Santé`, "Aire") ~ NA_character_, 
+                                   .default = `kg Panzi Zone de Santé`),
+         `kg Panzi Zone de Santé` = case_when(!is.na(hf) ~ NA_character_, 
+                                              .default = `kg Panzi Zone de Santé`)
+  ) %>% 
+  fill(`kg Panzi Zone de Santé`, .direction = "down") %>% 
+  filter(!is.na(hf))
+         
+
 ######################################### number missing observations ##########
 
 b <- map(names(data), 
@@ -402,6 +412,15 @@ data5 <- left_join(data4, comp_list, by = "n")
 ##############################################################################
 ##################################################  basic charts  ############
 
+names(data5)
+
+temp <- data5 %>% 
+  distinct(etablissement_recu, as)
+
+rio::export(temp, "unique_facilities.xlsx")
+
+
+
 data5_a <- data5 %>% 
   mutate(decede_non = case_when(is.na(evolution) ~ NA_character_, 
                                 evolution == "decede" ~ "decede", 
@@ -416,6 +435,8 @@ data5_a <- data5 %>%
                                        is.na(date_de_consultation) ~ NA_character_, 
                                        .default = "error"), 
          year_week_factor = factor(paste(week), levels = unique(data2$week)))
+
+
 
 prop_var <- list("age_cat1",
                  "age_cat2", 
@@ -487,36 +508,67 @@ case_loc <- case_loc_a %>%
 ### rdts performed (panel b), tpr (panel c), and Case fatality rate (panel d)
 ### by week
 
-hf_graphics <- data5_a %>% 
-group_by(as, etablissement_recu, year_week_factor) %>% 
+hf_graphics_a <- data5_a %>% 
+  group_by(etablissement_recu, year_week_factor) %>% 
   summarise(number = n(), 
             deaths = sum(evolution == "decede", na.rm = TRUE), 
             rdt = sum(!is.na(tdr1), na.rm = TRUE),
             perc_tested = rdt/number,
             rdt_pos = sum(tdr1 == "positif", na.rm = TRUE), 
             anti_palu = sum(any_artemisinins == TRUE, na.rm = TRUE), 
-            tpr = rdt_pos/rdt, 
-            cfr = deaths/(deaths + number)
+            tpr = 100*rdt_pos/rdt, 
+            cfr = 100*deaths/(deaths + number), 
+            deaths_mal = sum(evolution == "decede" & tdr1 == "positif", na.rm = TRUE),
+            deaths_mal_tx = sum(evolution == "decede" & tdr1 == "positif" & any_artemisinins == TRUE, na.rm = TRUE),
+            cfr_mal_only = 100*deaths_mal/rdt_pos, 
+            cfr_mal_tx = 100*deaths_mal_tx/rdt_pos
   ) %>% 
-  ungroup()
+  ungroup() 
+  
+a <- names(hf_graphics_a)[!names(hf_graphics_a) %in% c("etablissement_recu", 
+                                                  "year_week_factor")]
+
+b <- unlist(rep(list(0), length(a))) %>% 
+  as.list() %>% 
+  set_names(a)
+
+
+hf_graphics <- hf_graphics_a %>%  
+  complete(etablissement_recu, year_week_factor, fill = b)
+
+  
   
 
 graphs <- hf_graphics %>% 
   split(.$etablissement_recu) %>% 
+  map(~.x %>% 
+        arrange(year_week_factor)) %>% 
   map(function(x){
     case_count <- x %>% 
       ggplot()+
       geom_col(aes(x = year_week_factor, y = number))+
       theme_minimal()
     
-    deaths <- x %>% 
+    rdt_performed <- x %>% 
       ggplot()+
-      geom_col(aes(x = year_week_factor, y = deaths))+
+      geom_col(aes(x = year_week_factor, y = rdt))+
+      theme_minimal()
+    
+    tpr <- x %>% 
+      ggplot()+
+      geom_path(aes(x = year_week_factor, y = tpr, group = 1))+
+      theme_minimal()
+    
+    cfr <- x %>% 
+      ggplot()+
+      geom_path(aes(x = year_week_factor, y = cfr, group = 1))+
       theme_minimal()
     
     
     
-    return(a)
+    panels <- cowplot::plot_grid(case_count, rdt_performed,
+                                 tpr, cfr, ncol = 1)
+    return(panels)
   }
       
         )
@@ -555,6 +607,24 @@ zds <- geo_codes_dhis2 %>%
 
 # name as 'Panzi Zone de Santé'
 
+health_area <- geo_codes_dhis2 %>% 
+  sf::st_drop_geometry() %>% 
+  filter(str_detect(parentName, "Panzi")) %>% 
+  filter(!str_detect(parentName, "^sk")) %>% 
+  filter(levelName != "Formation Sanitaire (FOSA)") %>% 
+  sf::st_as_sf()
+
+
+fs <- geo_codes_dhis2 %>% 
+  sf::st_drop_geometry() %>% 
+  filter(parentName %in% health_area$name) %>% 
+  sf::st_as_sf()
+
+tmap::tmap_mode("view")
+tmap::tm_shape(fs)+
+  tmap::tm_dots()
+
+
 temp <- geo_codes_dhis2 %>% 
   sf::st_drop_geometry() %>% 
   filter(str_detect(parentName, "Panzi")) %>% 
@@ -567,14 +637,20 @@ temp2 <- geo_codes_dhis2 %>%
   filter(child_graph %in% temp$id) %>% 
   sf::st_as_sf()
 
-tmap::tm_shape(temp)+
+dhis2_names <- sf::st_drop_geometry(temp2) %>% 
+  distinct(name, parentName)
+  
+rio::export(dhis2_names, "dhis2_names.xlsx")
+
+map <- tmap::tm_shape(temp)+
   tmap::tm_borders()+
+  tmap::tm_text("name")+
   tmap::tm_shape(zds)+
   tmap::tm_borders()+
   tmap::tm_shape(temp2)+
   tmap::tm_dots()
 
-
+tmap::tmap_save(map, filename = "aire_de_sante_panzi_labeled.png")
 
 temp1 <- geo_codes_dhis2 %>% 
   sf::st_drop_geometry() %>% 

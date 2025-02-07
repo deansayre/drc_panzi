@@ -1,0 +1,530 @@
+---
+title: "Outbreak of Febrile illness with cough and increased mortality -- Panzi Health Zone, DRC"
+date: "`r format(Sys.time(), '%A %d %B %Y')`"
+#runtime: shiny
+output:
+  html_document:
+    code_folding: hide
+    code_download: true
+    highlight: zenburn
+    number_sections: yes
+    theme: spacelab
+    toc: yes
+    toc_collapse: no
+    toc_depth: 3
+    toc_float: yes
+
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+```
+
+# Introduction
+
+
+```{r}
+
+if (!require("pacman")) install.packages("pacman")
+
+pacman::p_load(rio, 
+               Hmisc,
+               downloadthis,
+               flextable,
+               stringdist,
+               tidyverse)
+
+pacman::p_install_gh("deansayre/Rtesunate")
+pacman::p_install_gh("const-ae/ggupset")
+pacman::p_install_gh("moodymudskipper/powerjoin")
+
+
+data_loc <- here::here("linelist", "LL_GPM_PANZI_23_01_2025_AS_RAJ.xlsx")
+
+data <- rio::import(data_loc) %>% 
+  Rtesunate::act_clean() %>% 
+  rename(n = 1) %>% 
+  mutate(id = row_number())
+
+lab_loc <- here::here("linelist", "lab_linelist.xlsx")
+
+lab_1 <- rio::import(lab_loc) %>% 
+  Rtesunate::act_clean() %>% 
+  select(-1) %>% 
+  filter(!is.na(id)) %>% 
+  filter(!is.na(noms))
+
+lab_2 <- rio::import(here::here("linelist", "lab_linelist.xlsx"), which = 2) %>% 
+  Rtesunate::act_clean() %>% 
+  rename(id = labid) %>% 
+  mutate(dte_de_reception = as.character(dte_de_reception)) %>% 
+  filter(!is.na(id))
+
+
+lab <- bind_rows(lab_1, lab_2) %>% 
+  filter(!is.na(noms))
+
+hf_dhis2 <- rio::import("dhis2_hf_names.xlsx") %>% 
+  mutate(hf = case_when(str_detect(`kg Panzi Zone de Santé`, "Aire") ~ NA_character_, 
+                                   .default = `kg Panzi Zone de Santé`),
+         `kg Panzi Zone de Santé` = case_when(!is.na(hf) ~ NA_character_, 
+                                              .default = `kg Panzi Zone de Santé`)
+  ) %>% 
+  fill(`kg Panzi Zone de Santé`, .direction = "down") %>% 
+  filter(!is.na(hf))
+
+hf_dhis2 %>% 
+  Rtesunate::act_clean() %>% 
+  rio::export(file = "hf_dhis2_usable.xlsx")
+
+
+line_name <- word(data_loc, -1, sep = "/")  
+line_last <- max(data$date_de_notification)
+
+lab_name <- word(lab_loc, -1, sep = "/") 
+lab_last <- max(lab$date_de_prelevement, na.rm = TRUE)
+```
+
+Line list data (file name _`r line_name`_) contains `r nrow(data)` observations, 
+the most recent of which is dated `r line_last`.
+
+Lab data (file name _`r lab_name`_) contains `r nrow(lab)` observations, 
+the most recent of which is dated `r lab_last`.
+
+## Data missingness
+The number of missing observations for each variable are noted below. 
+Note variables are listed in snakecase.
+```{r}
+
+b <- map(names(data), 
+         function(.x){x = sym(.x)
+         data %>% 
+           filter(is.na({{x}}))
+         }
+)
+
+missing_obs <- map(b, ~nrow(.x)) %>% 
+  as_vector() %>% 
+  as_tibble() %>% 
+  add_column(Variable = names(data), 
+             .before = 1) %>% 
+  rename(`Observations Missing` = value) %>% 
+  filter(variable != "id")
+
+
+rm(b)
+
+flextable::flextable(missing_obs) %>% 
+  flextable::autofit()
+  
+```
+
+## Spelling changes
+Basic formatting and spelling changes are coded here. Explore code to review 
+changes made, along with the Excel file below. 
+
+```{r}
+
+
+data_1a <- data %>% 
+  mutate(tratement = str_replace_all(tratement, c("vit_c" = "vitc",
+                                                  "vitce" = "vitc_vite",
+                                                  "vit_ce" = "vitc_vite",
+                                                  "vitace" = "vitc_vite",
+                                                  "vita_c" = "vitc",
+                                                  "vitac" = "vita_vitc", 
+                                                  "vit_b12" = "vitb12",
+                                                  "vit_b6" = "vitb6",
+                                                  "at_60" = "at60", 
+                                                  "para_injct" = "para-inject", 
+                                                  "paracetamol_injct" = "para-inject",
+                                                  "parainject" = "para-inject",
+                                                  "para_inject" = "para-inject",
+                                                  "para_inj" = "para-inject",
+                                                  "acide_folique" = "acide-folique", 
+                                                  "para" = "paracetamol", 
+                                                  "artesunate_inj" = "artesunate-inj")
+                                     )
+  )# there will be an issue with entries containing multiple words as 
+   # single entry when go to change pull individuals from these lists
+
+
+data_char <- data_1a %>% 
+  select(where(is.character)) %>% 
+  select(-c(nom_et_postnom))
+
+entered_values <- map(names(data_char), 
+                      function(x){data_char %>% 
+                          pull({{x}}) %>% 
+                          unique()
+                      }) %>% 
+  set_names(names(data_char)) %>% 
+  map(~as.data.frame(unlist(.x))
+      )%>% 
+  list_rbind(names_to = "variable") %>% 
+  rename(entry = 2) %>% 
+  arrange(variable, entry)
+
+# uncomment below if need to update list of entries requiring spelling changes
+
+#rio::export(entered_values, file = "entered_free_text.xlsx")
+
+# spelling changes made and saved to separate file 'entered_free_text_with_spelling_change.xlsx'
+
+spelling_changes <- rio::import("entered_free_text_with_spelling_change.xlsx") %>% 
+  filter(!is.na(change_to))
+
+data1 <- data_1a %>% 
+  linelist::clean_variable_spelling(wordlists = spelling_changes,
+                                    from = 2, 
+                                    to = 3, 
+                                    spelling_vars = 1)
+
+data2 <- data1 %>%  
+  mutate(age_unit = word(age, sep = "_", -1), 
+         age1 = str_remove_all(age, paste0("_", age_unit)), 
+         age2 = as.numeric(str_replace_all(age1, "_", "\\.")),
+         age_years = case_when(age1 == "2ans" ~ 2, 
+                               age1 == "4" ~ 4, 
+                               age1 == "8_ans" ~ 8, 
+                               age1 == "3mois" ~ 3/12,
+                               age1 == "1omois" ~ 1/12, 
+                               age1 == "18mois" ~ 18/12, 
+                               age1 == "7mois" ~ 7/12, 
+                               age1 == "1an" ~ 1,
+                               age1 == "1ans" ~ 1,
+                               age1 == "8ans" ~ 8,
+                               age1 == "4_1_2" ~ 4.5, 
+                               age1 == "3_ans_11" ~ 3+11/12,
+                               age1 == "1_1_2" ~ 1.5,
+                               age1 == "2_1_2" ~ 2.5,
+                               age1 == "4_1_2" ~ 4.5,
+                               age1 == "9mois" ~ 9/12,
+                               age1 == "38a" ~ 38,
+                               age_unit %in% c("m", "mois", "mos") ~ age2/12, 
+                               age_unit %in% c("semaine", "semaines") ~ age2/52,
+                               age_unit %in% c("ans", "asns", "an", "nas") ~ age2, 
+                               .default = 999), 
+         week = tsibble::yearweek(date_de_notification),
+         paludisme_1 = case_when(paludisme == "palu" ~ "oui", 
+                                 .default = paludisme), 
+         tdr1 = case_when(tdr == "non.rensegne" ~ NA, 
+                          .default = tdr)
+         )
+
+spell1 <- spelling_changes %>% 
+ downloadthis::download_this(
+    output_name = "panzi_spelling_change1",
+    output_extension = ".xlsx",
+    button_label = "Spelling Changes",
+    button_type = "default",
+    has_icon = TRUE,
+    icon = "fa-regular fa-arrow-down-to-line")
+
+```
+
+```{r echo=FALSE}
+
+spell1
+
+```
+
+
+
+## Removal of duplicates
+
+
+```{r}
+
+rm(spell1)
+
+####################################  search for duplicates using fuzzy matching
+#### NOT complete as of 26 January, 2025. Response leadership to weigh in ######
+
+# ensure Id provided is unique identifier
+#  Hmisc::describe(data2$n)
+
+data_dup <- data2 %>% 
+  dplyr::select(date_de_notification, 
+                name = nom_et_postnom,
+                as, 
+                sexe,
+                age, 
+                n) %>% 
+  mutate(n = as.numeric(n)) %>% 
+  full_join(., ., by = character()) %>% 
+  filter(n.x < n.y) %>% 
+  mutate(
+    name.dist = stringdist(name.x, name.y), 
+    as_same = as.x == as.y, 
+    duration = lubridate::time_length(interval(date_de_notification.x, 
+                                               date_de_notification.y), 
+                                      "day")) %>% 
+  filter(name.dist < 3) %>% 
+  select(
+    name.dist, 
+    name.x, name.y, 
+    sexe.x, sexe.y,
+    date_de_notification.x, date_de_notification.y, 
+    jours = duration, 
+    as_same, as.x, as.y, 
+    n.x, n.y) %>% 
+  mutate(id_to_discard = NA) %>% 
+  arrange(name.dist, jours, as_same)
+  
+
+
+
+# for manual examination
+rio::export(data_dup, "doublants_possibles.xlsx")
+
+doublants_vrai <- rio::import("doublants_possibles_vrai.xlsx")
+
+data3 <- data2 %>% 
+  filter(!n %in% doublants_vrai$id_to_discard)
+
+dupes <- filter(doublants_vrai, !is.na(id_to_discard)) %>% 
+ downloadthis::download_this(
+    output_name = "panzi_dupes",
+    output_extension = ".xlsx",
+    button_label = "Duplicates",
+    button_type = "default",
+    has_icon = TRUE,
+    icon = "fa-regular fa-arrow-down-to-line")
+
+```
+
+A total of `r nrow(filter(doublants_vrai, !is.na(id_to_discard)))` duplicates
+were removed, leaving a total of `r nrow(data3)` observations.
+
+
+```{r echo=FALSE}
+
+dupes
+
+```
+
+## Processing complication and treatment data
+These data are entered as free text. Here they are standardized and processed
+so as to be more useable.
+
+```{r}
+
+
+datatx <- data3 %>% 
+  select(n, tratement) %>% 
+  mutate(tx_list = str_split(tratement, "_")) %>% 
+  filter(!is.na(tx_list)) %>% 
+  unnest_longer(tx_list)
+
+datatx_unique <- datatx %>% 
+  select(tx_list) %>% 
+  distinct(tx_list) %>% 
+  arrange(tx_list)
+
+rio::export(datatx_unique, "linelist/output/tratement_sp.xlsx")
+
+treatment_spelling <- rio::import(here::here("linelist", 
+                                             "output", 
+                                             "tratement_sp_edit.xlsx")) %>% 
+  filter(!is.na(change_to))
+
+datatx_sp <- datatx %>% 
+  left_join(treatment_spelling, by = "tx_list") %>% 
+  mutate(tx_list_sp = case_when(!is.na(change_to)~ change_to, 
+                                .default = tx_list)) %>% 
+  select(n, tx_list = tx_list_sp) %>% 
+  filter(tx_list != "rm") %>% 
+  group_by(n) %>% 
+  arrange(tx_list, .by_group = TRUE) %>% 
+  ungroup() %>% 
+  filter(!str_detect(tx_list, "^\\d")) 
+
+treatment_list <- datatx_sp %>% 
+  group_by(n) %>% 
+  summarise(tx = list(tx_list)) %>%
+  rowwise() %>% 
+  mutate(tx1 = paste(unlist(tx), collapse = "_"))
+
+unique(datatx_sp$tx_list)
+
+data4 <- left_join(data3, treatment_list, by = "n") %>% 
+  select(-tratement) %>% 
+  ungroup() %>% 
+  rowwise() %>% 
+  mutate(any_artemisinins_a = list(map(c("act", 
+                                          "artesunate",
+                                          "aretesunate.rectal", 
+                                          "asaq", 
+                                          "artemether"),
+                                        function(x) str_detect(tx1, fixed(x)))),
+         any_artemisinins = any(any_artemisinins_a == TRUE), 
+         any_abx_a = list(map(c("amoxicilline", 
+                                "azithromycine", 
+                                "ceftriaxone", 
+                                "erytromycine",
+                                "bactrim",
+                                "genta"),
+                              function(x) str_detect(tx1, fixed(x)))),
+         any_abx = any(any_abx_a == TRUE), 
+         complications = str_replace_all(complications, "broncho_pulmonaire", 
+                                         "broncho.pulmonaire"))
+
+
+
+
+data_comp <- data4 %>% 
+  select(n, complications) %>% 
+  mutate(list = str_split(complications, "_")) %>% 
+  filter(!is.na(complications)) %>% 
+  unnest_longer(list)
+
+
+data_comp_unique <- data_comp %>% 
+  select(list) %>% 
+  distinct(list) %>% 
+  arrange(list)
+
+rio::export(data_comp_unique, "linelist/output/complications_sp.xlsx")
+
+complications_spelling <- rio::import(here::here("linelist", 
+                                             "output", 
+                                             "complications_sp_edit.xlsx")) %>% 
+  filter(!is.na(change_to))
+
+
+
+data_comp_sp <- data_comp %>% 
+  left_join(complications_spelling, by = "list") %>% 
+  mutate(comp_list_sp = case_when(!is.na(change_to)~ change_to, 
+                                .default = list)) %>% 
+  select(n, list = comp_list_sp) %>% 
+  filter(list != "rm") %>% 
+  group_by(n) %>% 
+  arrange(list, .by_group = TRUE) %>% 
+  ungroup() %>% 
+  filter(!str_detect(list, "^\\d")) 
+
+comp_list <- data_comp_sp %>% 
+  group_by(n) %>% 
+  summarise(comp = list(list)) %>%
+  rowwise() %>% 
+  mutate(tx1 = paste(unlist(comp), collapse = "_"))
+
+unique(data_comp_sp$list)
+
+data5 <- left_join(data4, comp_list, by = "n")
+
+################################################################################
+
+
+############################################## clinical presentation ###########
+
+
+# meets case definition? revision of case definition?
+
+
+sympt_specific_out <- function(x, db){
+  y <- sym(x)
+  a <- db %>% 
+    filter({{y}} == "oui") %>% 
+    summarise(nombre = n(), 
+              tpr = round(100*sum(tdr1 == "positif", na.rm = TRUE)/(sum(tdr1 == "negatif", 
+                                                                        na.rm = TRUE) + 
+                                                                      sum(tdr1 == "positif",
+                                                                          na.rm = TRUE)),1),
+              taux_mortalite = round(100*sum(evolution == "decede", na.rm = TRUE)/(sum(evolution != "decede", 
+                                                                                       na.rm = TRUE)+sum(evolution == "decede", na.rm = TRUE)),2))
+  
+  return(a)
+  }
+
+
+a <- map(names(data3[14:30]), ~sympt_specific_out(.x, data3)) %>% 
+  set_names(names(data3[14:30])) %>% 
+  list_rbind(names_to = "presentation")
+
+rio::export(a, "outcome_par_symptom.xlsx")
+
+a_flex <- a %>% 
+  mutate(presentation = str_to_title(str_replace_all(presentation, "_", " "))) %>% 
+  arrange(-nombre) %>% 
+  rename("Symptômes" = presentation, 
+         "Nombre de Cas" = nombre, 
+         "Taux de positivité - TDR (%)" = tpr, 
+         "Taux de mortalité (%)" = taux_mortalite) %>% 
+  flextable::flextable() %>% 
+  flextable::colformat_num(big.mark = "", digits = 1) %>% 
+  flextable::autofit()
+
+flextable::save_as_docx(a, path = paste0(here::here("linelist", 
+                                                    "output", 
+                                                    "symptom_outcome_all.docx")))
+
+outcome_by_presentation <- data3 %>% 
+  select(n, 14:30) %>% 
+  pivot_longer(-n) %>% 
+  filter(value == "oui") %>% 
+  group_by(n) %>% 
+  mutate(list_sympt = list(name)) %>% 
+  ungroup() %>% 
+  left_join(select(data3, n, tdr1, evolution), 
+            by = "n") %>% 
+  group_by(list_sympt) %>% 
+  summarise(count = n(), 
+            tpr = round(100*sum(tdr1 == "positif", na.rm = TRUE)/(sum(tdr1 == "negatif", 
+                                                                      na.rm = TRUE) + 
+                                                                    sum(tdr1 == "positif",
+                                                                        na.rm = TRUE)),1),
+            taux_mortalite = round(100*sum(evolution == "decede", na.rm = TRUE)/(sum(evolution != "decede", 
+                                                                                    na.rm = TRUE)+sum(evolution == "decede", na.rm = TRUE)),1)
+  ) %>% 
+  arrange(-count, -taux_mortalite, -tpr)
+
+
+missing_one <- outcome_by_presentation %>% 
+  rowwise() %>% 
+  filter(!all(c("fievre", "toux") %in% list_sympt)) 
+  
+missing_both <- outcome_by_presentation %>% 
+    rowwise() %>% 
+    filter(!any(c("fievre", "toux") %in% list_sympt)) 
+  
+symptom_combos <- map(list(outcome_by_presentation, missing_one, missing_both),
+    ~.x %>% rowwise()%>% 
+      mutate(list_sympt =  str_to_title(paste(list_sympt, collapse = ", ")), 
+             list_sympt = str_replace_all(list_sympt, "_", " ")) %>% 
+      rename(presentation_clinique = list_sympt, 
+             tdr_positivite_pourcent = tpr, 
+             nombre = count) %>% 
+      ungroup()
+)
+    
+symptom_combos_flex <- symptom_combos %>% 
+  map(~.x %>% 
+        rename("Symptômes" = presentation_clinique, 
+               "Nombre de Cas" = nombre, 
+               "Taux de positivité - TDR (%)" = tdr_positivite_pourcent, 
+               "Taux de mortalité (%)" = taux_mortalite) %>% 
+        flextable::flextable() %>% 
+        flextable::colformat_num(big.mark = "", digits = 1) %>% 
+        flextable::autofit()
+      )
+
+map2(symptom_combos_flex, 
+     list("symptom_outcome_all", "symptom_outcome_missing_fever_and_or_cough", 
+          "symptom_outcome_missing_both_fever_and_cough"), 
+     function(x, y){flextable::save_as_docx(x, path = paste0(here::here("linelist", 
+                                                                        "output"), "/", y, ".docx"))
+     })
+
+
+
+################################################################################
+#############################################  complications ###################
+
+
+
+
+```
+
