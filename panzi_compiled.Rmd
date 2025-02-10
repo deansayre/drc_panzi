@@ -534,10 +534,46 @@ Given the mortality rate in this group to date, some revision of the case
 definition is advised to further hone in on the population of interest. (These
 individuals are retained for the following analyses.)
 
+# Exploration of Paludisme and Grippe variables
+There are multiple variables in the data set requiring a diagnosis to be made
+after examining the patient. Symptom data for each are examined to determine if
+consistency in these determinations can be seen.
 
-# Patient demographics
+## Multiple diagnoses
 
 ```{r}
+prop_var <- c("bronchite", "ira", "paludisme", "grippe", "syndrome_grippal",
+                 "pneumonie","broncho_pneumonie", "autres_diagnostics")
+
+dx <-  data5 %>%
+  mutate(autres_diagnostics = na_if(autres_diagnostics, "non")) %>% 
+             group_by(across(all_of(prop_var))) %>% 
+             summarise(count = n()) 
+
+
+
+dx_dl <- treatment_spelling %>% 
+ downloadthis::download_this(
+    output_name = "diagnoses",
+    output_extension = ".xlsx",
+    button_label = "Diagnoses",
+    button_type = "default",
+    has_icon = TRUE,
+    icon = "fa-regular fa-arrow-down-to-line")
+
+```
+
+
+```{r echo = FALSE}
+
+dx_dl
+
+```
+
+## Focus on Malaria
+
+```{r}
+
 
 data5_a <- data5 %>% 
   mutate(decede_non = case_when(is.na(evolution) ~ NA_character_, 
@@ -553,10 +589,273 @@ data5_a <- data5 %>%
                                        date_de_consultation >= "2024-12-01" ~ "post_12_01", 
                                        is.na(date_de_consultation) ~ NA_character_, 
                                        .default = "error"), 
-         year_week_factor = factor(paste(week), levels = unique(data2$week)))
+         year_week_factor = factor(paste(week), levels = unique(data2$week)),
+         cough_fever = case_when(fievre == "oui" & toux == "oui" ~ "both", 
+                                 fievre == "oui" & (toux == "non" | is.na(toux)) ~ "fever", 
+                                 (fievre == "non" | is.na(fievre)) & toux == "oui" ~ "cough", 
+                                 is.na(fievre) & is.na(toux) ~ "unknown",
+                                 (fievre == "non" & is.na(toux)) | (is.na(fievre) & toux == "non") ~ "unknown",
+                                 fievre == "non" & toux == "non" ~ "none",
+                                 .default = "error")
+  )
+
+tpr_overall <- data5_a %>% 
+  group_by(paludisme_1) %>% 
+  summarise(tpr = sum(tdr1 == "positif", na.rm = TRUE)/(sum(tdr1== "positif", 
+                                                            na.rm = TRUE) +
+                                                          sum(tdr1== "negatif", 
+                                                            na.rm = TRUE))
+  )
+
+tpr_weekly<- data5_a %>% 
+  group_by(paludisme_1, year_week_factor) %>% 
+  summarise(tpr = sum(tdr1 == "positif", na.rm = TRUE)/(sum(tdr1== "positif", 
+                                                            na.rm = TRUE) +
+                                                          sum(tdr1== "negatif", 
+                                                            na.rm = TRUE))
+  ) %>% 
+  pivot_wider(names_from = "year_week_factor", 
+              values_from = "tpr")
+
+
+palu_pos_sym <- data5_a %>% 
+  filter(paludisme_1 == "oui") %>% 
+  select(n, 14:30) %>% 
+  pivot_longer(-n) %>% 
+  filter(value == "oui") %>% 
+  group_by(name) %>% 
+  summarise(counts = n()) %>% 
+  ungroup() %>% 
+  arrange(-counts)
+
+
+palu_pos_tdr <- data5_a %>% 
+  filter(paludisme_1 == "oui") %>% 
+  select(n, 14:30, tdr1) %>% 
+  pivot_longer(-c(n, tdr1)) %>% 
+  filter(value == "oui") %>% 
+  group_by(n) %>% 
+  mutate(list_sympt = list(name)) %>% 
+  ungroup() %>% 
+  distinct(n, .keep_all = TRUE) %>% 
+  group_by(list_sympt, tdr1) %>% 
+  summarise(count = n()) %>% 
+  ungroup() %>% 
+  rowwise() %>% 
+  mutate(sympt = paste0(list_sympt, collapse = ", ")) %>% 
+  ungroup() %>% 
+  arrange(-count) %>% 
+  select(-list_sympt)
+
+#  palu_pos_tdr <- data5_a %>% 
+#    filter(paludisme_1 == "oui") %>% 
+#    select(n, 14:30, tdr1) %>% 
+#    pivot_longer(-c(n, tdr1)) %>% 
+#    filter(value == "oui") %>% 
+#    group_by(n) %>% 
+#    mutate(list_sympt = list(name)) %>% 
+#    ungroup() %>% 
+#    group_by(list_sympt, tdr1) %>% 
+#    summarise(count = n()) %>% 
+#    ungroup() %>% 
+#    rowwise() %>% 
+#    mutate(sympt = paste0(list_sympt, collapse = ", ")) %>% 
+#    ungroup() %>% 
+#    arrange(-count) %>% 
+#    select(-list_sympt)
+#    
+
+
+palu_pos <- data5_a %>% 
+  filter(paludisme_1 == "oui") %>% 
+  select(n, 14:30) %>% 
+  pivot_longer(-n) %>% 
+  filter(value == "oui") %>% 
+  group_by(n) %>% 
+  mutate(list_sympt = list(name)) %>% 
+  ungroup() %>% 
+  distinct(n, .keep_all = TRUE) %>% 
+  group_by(list_sympt) %>% 
+  summarise(count = n()) %>% 
+  ungroup() %>% 
+  rowwise() %>% 
+  mutate(sympt = paste0(list_sympt, collapse = ", ")) %>% 
+  ungroup() %>% 
+  arrange(-count) %>% 
+  mutate(sympt = fct_reorder(sympt, count, .desc = TRUE))
+
+
+palu_pos_graph <- palu_pos %>% 
+  left_join(palu_pos_tdr, 
+            by = "sympt") %>% 
+  ungroup() %>% 
+  mutate(sympt = fct_reorder(sympt, count.x, .desc = TRUE)) %>% 
+  group_by(list_sympt) %>% 
+  mutate(id = cur_group_id()) %>% 
+  ungroup() %>% 
+  filter(id <= 20)
+
+
+plot_1 <- ggplot(palu_pos_graph)+
+  geom_col(aes(x = sympt, y = count.y, fill = tdr1), 
+           position = "stack")
+  
+
+
+
+palu_pos_points <- palu_pos %>% 
+  mutate(symptoms = map(sympt, ~str_split_1(as.character(.), ", "))
+         ) %>% 
+  unnest(symptoms) %>% 
+  ungroup() %>% 
+  mutate(
+    symptoms = factor(symptoms, levels = palu_pos_sym$name),
+    sympt = factor(sympt, levels = palu_pos$sympt)
+  ) %>%  
+  filter(!is.na(symptoms)) %>% 
+  filter(list_sympt %in% palu_pos_graph$list_sympt)
+  
+
+
+single_sympt <- palu_pos_graph %>% 
+    mutate(symptoms = map(sympt, ~str_split_1(as.character(.), ", "))
+         ) %>% 
+  unnest(symptoms) %>% 
+  ungroup() %>% 
+  group_by(symptoms, tdr1) %>% 
+  summarise(count = sum(count.y, na.rm = TRUE)) %>% 
+  ungroup() %>% 
+  group_by(symptoms) %>% 
+  mutate(total_count = sum(count))
+
+
+
+
+palu_pos_points |> 
+  ggplot(aes(x = sympt, y = symptoms)) +
+  geom_line(aes(group = sympt), col = 'dodgerblue4') +
+  geom_point(size = 1, col = 'dodgerblue4') +
+  scale_x_discrete(drop = FALSE)
+
+
+
+
+install.packages("patchwork")
+library(patchwork)
+layout <- '
+##AAAA
+BBCCCC'
+
+bar_chart + 
+  subject_bars + 
+  point_chart +
+  plot_layout(design = layout) +
+  plot_annotation(
+     title = 'Some schools are below average in maths, reading\nor writing. Here\'s how that looks by subject.',
+    caption = 'This uses fake data.',
+  )
+
+
+palu_split <- data5_a %>% 
+  split(.$paludisme_1) %>% 
+  map(~.x %>% 
+        select(n, 14:30) %>% 
+  pivot_longer(-n) %>% 
+  filter(value == "oui") %>% 
+  mutate(name = str_to_title(str_replace_all(name, "_", " "))) %>% 
+  group_by(n) %>% 
+  summarise(list_sympt = list(name)) %>% 
+  ggplot(aes(x=list_sympt)) +
+  geom_bar() +
+  ggupset::scale_x_upset(n_intersections = 30, order_by = "degree")+
+  theme_minimal()+
+  labs(x = "Symptomes cliniques", 
+       y = "Nombre"))
+
+
+upset_all <- data3 %>% 
+  
+
+```
+
+
+```{r}
+
+
+prop_var <- list("bronchite", "ira", "paludisme", "grippe", "syndrome_grippal",
+                 "pneumonie","broncho_pneumonie", "autres_diagnostics")
+
+
+sympt_prop_list <- map(prop_var, function(x){
+           y <- sym(x)
+           sympt <-  c("fievre", "toux", "rhinorrhee", "dyspnee", 
+                       "asthenie_physique", "courbatures",
+ "cephalee", "frisson", "anorexie", "vomissement", "douleurs_abdominales",
+ "diarrhee",  "douleurs_generalisees",   "lombalgie",  "douleurs_au_bas_ventre", 
+ "douleurs_costales", "douleurs_testiculaires")
+           
+           a <- data5 %>%
+             filter({{y}} == "oui") %>% 
+             group_by(across(all_of(sympt))) %>% 
+             summarise(count = n()) 
+
+         return(a)
+         }
+         ) %>% 
+  set_names(prop_var) %>% 
+  list_rbind(names_to = "dx") 
+
+
+%>% 
+  mutate(across(c(decede, non_decede), ~replace_na(.x, 0))) %>% 
+  mutate(total = rowSums(select(., decede, non_decede)), 
+         cfr = round(100*decede/total, 1))
+
+
+
+
+```
+
+
+
+# Patient demographics
+
+```{r}
+
+
+
 
 deces_5 <- data5_a %>% 
   filter(evolution == "decede")
+
+
+prop_var <- list("age_cat1",
+                 "age_cat2", 
+                 "sexe", 
+                 "as",
+                 "fievre",
+                 "toux", 
+                 "cough_fever",
+                 "consult_pre_dec01")
+
+demo_prop_list <- map(prop_var, function(x){
+           y <- sym(x)
+           a <- data5_a %>%
+             group_by(decede_non, {{y}}) %>% 
+             summarise(count = n()) %>% 
+             pivot_wider(names_from = "decede_non", 
+                         values_from = "count") %>% 
+             rename(category = 1)
+
+         return(a)
+         }
+         ) %>% 
+  set_names(prop_var) %>% 
+  list_rbind(names_to = "element") %>% 
+  mutate(across(c(decede, non_decede), ~replace_na(.x, 0))) %>% 
+  mutate(total = rowSums(select(., decede, non_decede)), 
+         cfr = round(100*decede/total, 1))
+  
 
 age_pyr <- map(list(data5_a, deces_5),
                ~.x %>% 
