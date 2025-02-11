@@ -82,6 +82,12 @@ line_last <- max(data$date_de_notification)
 
 lab_name <- word(lab_loc, -1, sep = "/") 
 lab_last <- max(lab$date_de_prelevement, na.rm = TRUE)
+
+theme <- ggplot2::theme_minimal()
+ggplot2::theme_set(theme)
+
+color3 <- c("cadetblue4", "firebrick4", "white")
+
 ```
 
 Line list data (file name _`r line_name`_) contains `r nrow(data)` observations, 
@@ -596,7 +602,12 @@ data5_a <- data5 %>%
                                  is.na(fievre) & is.na(toux) ~ "unknown",
                                  (fievre == "non" & is.na(toux)) | (is.na(fievre) & toux == "non") ~ "unknown",
                                  fievre == "non" & toux == "non" ~ "none",
-                                 .default = "error")
+                                 .default = "error"), 
+         tdr1 = factor(case_when(is.na(tdr1) ~ "unknown",
+                                 .default = tdr1), 
+                       levels = c("unknown", 
+                                  "negatif", 
+                                  "positif"))
   )
 
 tpr_overall <- data5_a %>% 
@@ -607,7 +618,7 @@ tpr_overall <- data5_a %>%
                                                             na.rm = TRUE))
   )
 
-tpr_weekly<- data5_a %>% 
+tpr_weekly <- data5_a %>% 
   group_by(paludisme_1, year_week_factor) %>% 
   summarise(tpr = sum(tdr1 == "positif", na.rm = TRUE)/(sum(tdr1== "positif", 
                                                             na.rm = TRUE) +
@@ -647,23 +658,6 @@ palu_pos_tdr <- data5_a %>%
   arrange(-count) %>% 
   select(-list_sympt)
 
-#  palu_pos_tdr <- data5_a %>% 
-#    filter(paludisme_1 == "oui") %>% 
-#    select(n, 14:30, tdr1) %>% 
-#    pivot_longer(-c(n, tdr1)) %>% 
-#    filter(value == "oui") %>% 
-#    group_by(n) %>% 
-#    mutate(list_sympt = list(name)) %>% 
-#    ungroup() %>% 
-#    group_by(list_sympt, tdr1) %>% 
-#    summarise(count = n()) %>% 
-#    ungroup() %>% 
-#    rowwise() %>% 
-#    mutate(sympt = paste0(list_sympt, collapse = ", ")) %>% 
-#    ungroup() %>% 
-#    arrange(-count) %>% 
-#    select(-list_sympt)
-#    
 
 
 palu_pos <- data5_a %>% 
@@ -696,9 +690,7 @@ palu_pos_graph <- palu_pos %>%
   filter(id <= 20)
 
 
-plot_1 <- ggplot(palu_pos_graph)+
-  geom_col(aes(x = sympt, y = count.y, fill = tdr1), 
-           position = "stack")
+
   
 
 
@@ -726,54 +718,61 @@ single_sympt <- palu_pos_graph %>%
   summarise(count = sum(count.y, na.rm = TRUE)) %>% 
   ungroup() %>% 
   group_by(symptoms) %>% 
-  mutate(total_count = sum(count))
+  mutate(total_count = sum(count)) %>% 
+  ungroup() %>% 
+  mutate(symptoms = factor(symptoms, levels = palu_pos_sym$name))
 
 
+horizontal_bars <- ggplot(single_sympt)+
+  geom_col(aes(x = -count, y = symptoms, fill = tdr1), color = "grey50")+
+    scale_fill_manual(values = rev(color3))+
+  scale_y_discrete(limits = rev)+
+  scale_x_continuous(labels = function(x) abs(x))+
+  theme(legend.position = "none", 
+        axis.text.y = element_blank())+
+  labs(x = element_blank(), 
+       y = element_blank())
 
-
-palu_pos_points |> 
+points <- palu_pos_points %>%  
   ggplot(aes(x = sympt, y = symptoms)) +
-  geom_line(aes(group = sympt), col = 'dodgerblue4') +
-  geom_point(size = 1, col = 'dodgerblue4') +
-  scale_x_discrete(drop = FALSE)
+  geom_line(aes(group = sympt), col = 'grey50') +
+  geom_point(size = 3, col = 'grey50') +
+  scale_x_discrete(drop = TRUE)+
+  scale_y_discrete(limits = rev, 
+                   labels = rev(str_to_title(str_replace_all(sort(unique(single_sympt$symptoms)),
+                                         "_", " "))))+
+  theme(axis.text.x = element_blank())+
+  labs(x = "Presentation", 
+       y = element_blank())
 
 
 
-
-install.packages("patchwork")
-library(patchwork)
-layout <- '
-##AAAA
-BBCCCC'
-
-bar_chart + 
-  subject_bars + 
-  point_chart +
-  plot_layout(design = layout) +
-  plot_annotation(
-     title = 'Some schools are below average in maths, reading\nor writing. Here\'s how that looks by subject.',
-    caption = 'This uses fake data.',
-  )
+plot_1 <- ggplot(palu_pos_graph)+
+  geom_col(aes(x = sympt, y = count.y, fill = tdr1), 
+           color = "grey50",
+           position = "stack")+
+  scale_fill_manual(values = rev(color3))+
+  theme(axis.text.x = element_blank(), 
+        legend.position = "none")+
+  labs(x = element_blank(), 
+       y = "Counts")
 
 
-palu_split <- data5_a %>% 
-  split(.$paludisme_1) %>% 
-  map(~.x %>% 
-        select(n, 14:30) %>% 
-  pivot_longer(-n) %>% 
-  filter(value == "oui") %>% 
-  mutate(name = str_to_title(str_replace_all(name, "_", " "))) %>% 
-  group_by(n) %>% 
-  summarise(list_sympt = list(name)) %>% 
-  ggplot(aes(x=list_sympt)) +
-  geom_bar() +
-  ggupset::scale_x_upset(n_intersections = 30, order_by = "degree")+
-  theme_minimal()+
-  labs(x = "Symptomes cliniques", 
-       y = "Nombre"))
+
+right <- cowplot::plot_grid(plot_1, points, ncol = 1,
+                            rel_heights = c(5,2),
+                            align = "hv", axis = "tblr")
+
+left <- cowplot::plot_grid(NULL, horizontal_bars, ncol = 1,
+                            rel_heights = c(5,2),
+                            align = "hv", axis = "tblr")
+
+full <- cowplot::plot_grid(left, right, ncol = 2,
+                           rel_widths = c(1,3),
+                   align = "hv", axis = "tb")
 
 
-upset_all <- data3 %>% 
+
   
 
 ```
