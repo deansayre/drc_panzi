@@ -576,7 +576,9 @@ dx_dl
 
 ```
 
-## Focus on Malaria
+## Focus on Malaria {.tabset .tabset-pills}
+
+### Permformance Metrics of clinical classification in data set
 
 ```{r}
 
@@ -610,25 +612,113 @@ data5_a <- data5 %>%
                                   "positif"))
   )
 
-tpr_overall <- data5_a %>% 
+
+
+metrics_overall <- data5_a %>% 
+  group_by(paludisme_1, tdr1) %>% 
+  summarise(counts = n()) %>% 
+  ungroup()
+
+temp <- metrics_overall %>% 
+  filter(tdr1 != "unknown" & !is.na(paludisme_1)) %>% 
+  group_by(tdr1) %>% 
+  mutate(test_sums = sum(counts)) %>% 
+  ungroup() %>% 
   group_by(paludisme_1) %>% 
-  summarise(tpr = sum(tdr1 == "positif", na.rm = TRUE)/(sum(tdr1== "positif", 
-                                                            na.rm = TRUE) +
-                                                          sum(tdr1== "negatif", 
-                                                            na.rm = TRUE))
-  )
+  mutate(clin_sums = sum(counts)) %>% 
+  ungroup() %>% 
+  mutate(sens_spec = counts/test_sums, 
+         ppv_npv = counts/clin_sums, 
+         across(c(sens_spec, ppv_npv), ~round(100*.x, 1)))
+
+sens <- pull(filter(temp, paludisme_1=="oui" & tdr1 == "positif"), sens_spec)
+sens_num <- pull(filter(temp, paludisme_1=="oui" & tdr1 == "positif"), counts)
+sens_den <- pull(filter(temp, paludisme_1=="oui" & tdr1 == "positif"), test_sums)
+
+spec <- pull(filter(temp, paludisme_1=="non" & tdr1 == "negatif"), sens_spec)
+spec_num <- pull(filter(temp, paludisme_1=="non" & tdr1 == "negatif"), counts)
+spec_den <- pull(filter(temp, paludisme_1=="non" & tdr1 == "negatif"), test_sums)
+
+ppv <- pull(filter(temp, paludisme_1=="oui" & tdr1 == "positif"), ppv_npv)
+ppv_num <- pull(filter(temp, paludisme_1=="oui" & tdr1 == "positif"), counts)
+ppv_den <- pull(filter(temp, paludisme_1=="oui" & tdr1 == "positif"), clin_sums)
+
+npv <- pull(filter(temp, paludisme_1=="non" & tdr1 == "negatif"), ppv_npv)
+npv_num <- pull(filter(temp, paludisme_1=="non" & tdr1 == "negatif"), counts)
+npv_den <- pull(filter(temp, paludisme_1=="non" & tdr1 == "negatif"), clin_sums)
+
+temp <- metrics_overall %>% 
+  filter(tdr1 == "unknown" | is.na(paludisme_1)) 
+
 
 tpr_weekly <- data5_a %>% 
+  group_by(paludisme_1, tdr1, year_week_factor) %>% 
+  summarise(counts = n()) %>% 
+  ungroup() %>% 
+  filter(tdr1 != "unknown" & !is.na(paludisme_1)) %>% 
+  group_by(tdr1, year_week_factor) %>% 
+  mutate(test_sums = sum(counts)) %>% 
+  ungroup() %>% 
   group_by(paludisme_1, year_week_factor) %>% 
-  summarise(tpr = sum(tdr1 == "positif", na.rm = TRUE)/(sum(tdr1== "positif", 
-                                                            na.rm = TRUE) +
-                                                          sum(tdr1== "negatif", 
-                                                            na.rm = TRUE))
+  mutate(clin_sums = sum(counts)) %>% 
+  ungroup() %>% 
+  mutate(sens = ifelse(paludisme_1=="oui" & tdr1 == "positif", counts/test_sums,
+                      NA), 
+         spec = ifelse(paludisme_1=="non" & tdr1 == "negatif", counts/test_sums, 
+                      NA),
+         npv = ifelse(paludisme_1=="non" & tdr1 == "negatif", counts/clin_sums, 
+                      NA),
+         ppv = ifelse(paludisme_1=="oui" & tdr1 == "positif", counts/clin_sums, 
+                      NA),
+         across(c(sens,spec, ppv,npv), ~round(100*.x, 1))) %>% 
+  filter((paludisme_1=="oui" & tdr1 == "positif") | (paludisme_1=="non" & tdr1 == "negatif")) %>% 
+  pivot_wider(names_from = c("paludisme_1", "tdr1"), 
+              values_from = c("counts", "test_sums", "clin_sums", 
+                              "sens", "spec", 
+                              "ppv", "npv")) %>% 
+  janitor::remove_constant() %>% 
+  arrange(year_week_factor) %>% 
+  mutate(Sensitivity = paste0(sens_oui_positif, "% (", counts_oui_positif, "/", 
+                              test_sums_oui_positif, ")"), 
+         Specificity = paste0(spec_non_negatif, "% (", counts_non_negatif, "/", 
+                              test_sums_non_negatif, ")"),
+         PPV = paste0(ppv_oui_positif, "% (", counts_oui_positif, "/", 
+                              clin_sums_oui_positif, ")"), 
+         NPV = paste0(npv_non_negatif, "% (", counts_non_negatif, "/", 
+                              clin_sums_non_negatif, ")")
   ) %>% 
-  pivot_wider(names_from = "year_week_factor", 
-              values_from = "tpr")
+  select(Week = year_week_factor, 
+         Sensitivity, 
+         Specificity, 
+         PPV, 
+         NPV) %>% 
+  flextable::flextable() %>% 
+  flextable::autofit()
 
+```
 
+Performance metrics of clinical malaria classification versus RDT as gold 
+standard: 
+
+* Sensitivity: `r sens`% (`r sens_num`/`r sens_den`)
+* Specificity: `r spec`% (`r spec_num`/`r spec_den`)
+* Positive Predictive Value: `r ppv`% (`r ppv_num`/`r ppv_den`)
+* Negative Predictive Value: `r npv`% (`r npv_num`/`r npv_den`)
+
+Note that `r sum(temp$counts)` observations (of `r nrow(data5_a)`) are missing
+RDT data and are not included above.
+
+Weekly performance metrics are provided below
+
+```{r}
+
+tpr_weekly
+
+```
+
+### Presentation of individuals classified as having malaria
+
+```{r}
 palu_pos_sym <- data5_a %>% 
   filter(paludisme_1 == "oui") %>% 
   select(n, 14:30) %>% 
@@ -638,7 +728,6 @@ palu_pos_sym <- data5_a %>%
   summarise(counts = n()) %>% 
   ungroup() %>% 
   arrange(-counts)
-
 
 palu_pos_tdr <- data5_a %>% 
   filter(paludisme_1 == "oui") %>% 
@@ -658,8 +747,6 @@ palu_pos_tdr <- data5_a %>%
   arrange(-count) %>% 
   select(-list_sympt)
 
-
-
 palu_pos <- data5_a %>% 
   filter(paludisme_1 == "oui") %>% 
   select(n, 14:30) %>% 
@@ -678,7 +765,6 @@ palu_pos <- data5_a %>%
   arrange(-count) %>% 
   mutate(sympt = fct_reorder(sympt, count, .desc = TRUE))
 
-
 palu_pos_graph <- palu_pos %>% 
   left_join(palu_pos_tdr, 
             by = "sympt") %>% 
@@ -688,12 +774,6 @@ palu_pos_graph <- palu_pos %>%
   mutate(id = cur_group_id()) %>% 
   ungroup() %>% 
   filter(id <= 20)
-
-
-
-  
-
-
 
 palu_pos_points <- palu_pos %>% 
   mutate(symptoms = map(sympt, ~str_split_1(as.character(.), ", "))
@@ -707,8 +787,6 @@ palu_pos_points <- palu_pos %>%
   filter(!is.na(symptoms)) %>% 
   filter(list_sympt %in% palu_pos_graph$list_sympt)
   
-
-
 single_sympt <- palu_pos_graph %>% 
     mutate(symptoms = map(sympt, ~str_split_1(as.character(.), ", "))
          ) %>% 
@@ -772,14 +850,63 @@ full <- cowplot::plot_grid(left, right, ncol = 2,
                    align = "hv", axis = "tb")
 
 
-
+full
   
 
 ```
 
 
-```{r}
+## Focus on Respiratory Disease
 
+```{r}
+cols <-  c("fievre", "toux", "rhinorrhee", "dyspnee", 
+                       "asthenie_physique", "courbatures",
+ "cephalee", "frisson", "anorexie", "vomissement", "douleurs_abdominales",
+ "diarrhee",  "douleurs_generalisees",   "lombalgie",  "douleurs_au_bas_ventre", 
+ "douleurs_costales", "douleurs_testiculaires")
+
+cols2 <- c("grippe", "bronchite", "ira", "syndrome_grippal",
+           "pneumonie","broncho_pneumonie", "paludisme_1")
+
+
+# number of respiratory diagnoses each participant carries
+test <- data5_a %>% 
+  select(n, cols2) %>% 
+  pivot_longer(-n) %>% 
+  filter(value == "oui") %>% 
+  group_by(n) %>% 
+  mutate(disease_dx = n()) %>% 
+  ungroup() %>% 
+  select(-value) %>% 
+  group_by(n) %>% 
+  mutate(list_dx = list(name)) %>% 
+  ungroup() %>% 
+  select(-name) %>% 
+  distinct(.keep_all = TRUE)
+
+
+ggplot(test)+
+  geom_bar(aes(x = list_dx))+
+  scale_x_upset()
+
+
+test2 <- test %>% 
+  group_by(list_dx) %>% 
+  summarise(tot = n()) %>% 
+  ungroup() %>% 
+  arrange(-tot) %>% 
+  slice_head(n = 10)
+
+
+a <- test2$list_dx
+
+
+  
+  
+  filter(grippe == "oui") %>% 
+  select(cols, cols2)
+  group_by(!!!cols, !!!cols2) %>% 
+  summarise(counts = n())
 
 prop_var <- list("bronchite", "ira", "paludisme", "grippe", "syndrome_grippal",
                  "pneumonie","broncho_pneumonie", "autres_diagnostics")
