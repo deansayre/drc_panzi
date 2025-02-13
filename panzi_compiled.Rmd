@@ -37,6 +37,10 @@ pacman::p_install_gh("deansayre/Rtesunate")
 pacman::p_install_gh("const-ae/ggupset")
 pacman::p_install_gh("moodymudskipper/powerjoin")
 
+library(ggupset)
+library(Rtesunate)
+library(powerjoin)
+
 
 data_loc <- here::here("linelist", "LL_GPM_PANZI_23_01_2025_AS_RAJ.xlsx")
 
@@ -462,8 +466,8 @@ Additional information on patient presentation is provided in subsequent
 sections. This portion serves to ensure that all individuals included in the
 data set meet the case definition. 
 
-
-```{r include = FALSE}
+## Counts of individual symptoms
+```{r}
 
 symptoms <- data5 %>% 
   select(n, 14:30) %>% 
@@ -486,7 +490,7 @@ ggplot(symptoms)+
   
 
 ```
-
+## Symptom combinations, clinical diagnoses and case fatality rate
 
 ```{r}
 
@@ -568,11 +572,27 @@ tpr_cfr_by_presentation <- symptom_other %>%
   summarise(tpr = 100*sum(tdr == "positif", na.rm = TRUE)/(sum(tdr == "positif", na.rm = TRUE)+
                                                          sum(tdr == "negatif", na.rm = TRUE)),
             cfr = 100*sum(evolution == "decede", na.rm = TRUE)/sum(!is.na(evolution))
+  ) %>% 
+  ungroup() 
+
+tpr_cfr_by_presentation_strat <- symptom_other %>% 
+  group_by(list_sx_1)%>% 
+  mutate(tdr = factor(case_when(is.na(tdr) ~ "non.rensegne", 
+                         .default = tdr), 
+                      levels = c("positif", 
+                                 "negatif", 
+                                 "non.rensegne"))) %>% 
+  group_by(list_sx_1, tdr) %>% 
+  summarise(cfr = 100*sum(evolution == "decede", na.rm = TRUE)/sum(!is.na(evolution))
   )
 
 
+
 tpr_cfr_by_presentation_graph <- tpr_cfr_by_presentation %>% 
-  filter(list_sx_1 %in% symptom_combo_upset$list_sx_1)
+  filter(list_sx_1 %in% symptom_combo_upset$list_sx_1) 
+
+tpr_cfr_by_presentation_strat_graph <- tpr_cfr_by_presentation_strat %>% 
+    filter(list_sx_1 %in% symptom_combo_upset$list_sx_1) 
 
 top <- ggplot(symptom_combo_upset)+
   geom_bar(aes(x = list))+
@@ -592,29 +612,401 @@ tpr_graph <- tpr_cfr_by_presentation_graph %>%
   geom_col(aes(x = list_sx_1, 
                y = tpr), color = "black")+
   theme(axis.text.x=element_blank())+
-  labs(x = element_blank())
+  labs(x = element_blank(), 
+       y = "RDT Test positivity (%)")
 
-cfr_graph <- tpr_cfr_by_presentation_graph %>% 
-  ggplot()+
-  geom_col(aes(x = list_sx_1, 
+#devtools::install_github("wilkelab/ungeviz")
+
+cfr_graph <-  ggplot()+
+  geom_col(data = tpr_cfr_by_presentation_strat_graph, aes(x = list_sx_1, 
+               y = cfr, 
+               fill = tdr, 
+               group = tdr), 
+           color = "black", 
+           position = position_dodge2(width = 0.9, preserve = "single"))+
+  scale_fill_manual(values = c("firebrick4", 
+                               "cadetblue4", 
+                               "white"))+
+  ungeviz::geom_hpline(data = tpr_cfr_by_presentation_graph, aes(x = list_sx_1, 
                y = cfr), 
-           color = "black",
-           fill = "firebrick4")+
-  theme(axis.text.x=element_blank())+
+           color = "black")+
+  theme(axis.text.x=element_blank(), 
+        legend.position = "none")+
   labs(x = element_blank(), 
        y = "Case Fatality Rate (%)")
 
-cowplot::plot_grid(top, heat,  NULL,
+a <- cowplot::plot_grid(top, heat,  NULL, tpr_graph, NULL,
                    cfr_graph, 
                    ncol = 1, 
-                   rel_heights = c(1,1, -0.4, 1),
+                   rel_heights = c(1,1, -0.4, 1,-0.4, 1),
                    align = "hv", 
                    axis = "tblr")
+
+ggsave(a, filename = here::here("output", "presentation_combo_outcome.png"), 
+       dpi = 700, 
+       height = 11, 
+       width = 6, 
+       units = "in")
+
+
+```
+
+![](output/presentation_combo_outcome.png)
+
+
+## Counts of individual clinical diagnoses
+
+```{r}
+
+dx <- data5 %>% 
+  select(n, 32:38) %>% 
+  pivot_longer(-n) %>% 
+  filter(value == "oui") %>% 
+  group_by(name) %>% 
+  summarise(count = n()) %>% 
+  ungroup() %>% 
+  mutate(name = str_to_sentence(str_replace_all(name, "_", " ")),
+         name = case_when(name == "Ira" ~ "IRA", 
+                          .default = name),
+         name = fct_reorder(name, -count)) %>% 
+  arrange(name)
+
+ggplot(dx)+
+  geom_col(aes(x = name, y = count))+
+  theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1))+
+  labs(x = "Diagnosis", 
+       y = "Count")
+  
+```
+
+
+
+```{r}
+cols <-  c("fievre", "toux", "rhinorrhee", "dyspnee", 
+                       "asthenie_physique", "courbatures",
+ "cephalee", "frisson", "anorexie", "vomissement", "douleurs_abdominales",
+ "diarrhee",  "douleurs_generalisees",   "lombalgie",  "douleurs_au_bas_ventre", 
+ "douleurs_costales", "douleurs_testiculaires")
+
+cols2 <- c("grippe", "bronchite", "ira", "syndrome_grippal",
+           "pneumonie","broncho_pneumonie", "paludisme_1")
+
+
+# number of respiratory diagnoses each participant carries
+#  test <- data5_a %>% 
+#    select(n, cols2) %>% 
+#    pivot_longer(-n) %>% 
+#    filter(value == "oui") %>% 
+#    group_by(n) %>% 
+#    mutate(disease_dx = n()) %>% 
+#    ungroup() %>% 
+#    select(-value) %>% 
+#    group_by(n) %>% 
+#    mutate(list_dx = list(name)) %>% 
+#    ungroup() %>% 
+#    select(-name) %>% 
+#    distinct(.keep_all = TRUE)
+#  
+
+
+mutate(name = str_to_sentence(str_replace_all(name, "_", " "))) %>% 
+  group_by(n) %>% 
+  summarise(list = list(name)) %>% 
+  ungroup() %>% 
+  group_by(list) %>% 
+  mutate(count = n()) %>% 
+  ungroup() %>% 
+  arrange(-count) %>% 
+  group_by(list) %>% 
+  mutate(id = cur_group_id()) %>% 
+  ungroup() %>% 
+  mutate(list_sx_1 = factor(map_chr(list, paste, collapse = ", ")),
+         list_sx_1 = fct_reorder(list_sx_1, -count)) %>% 
+  group_by(list) 
+
+
+
+
+dx <- data5 %>% 
+  select(n, cols2) %>% 
+  pivot_longer(-n) %>% 
+  filter(value == "oui") %>% 
+  mutate(name = str_to_sentence(str_replace_all(name, "_", " "))) %>% 
+  group_by(n) %>% 
+  summarise(list = list(name)) %>% 
+  ungroup() %>% 
+  group_by(list) %>% 
+  mutate(count = n()) %>% 
+  ungroup() %>% 
+  arrange(-count) %>% 
+  group_by(list) %>% 
+  mutate(id = cur_group_id()) %>% 
+  ungroup() %>% 
+  mutate(list_dx_1 = factor(map_chr(list, paste, collapse = ", ")),
+         list_dx_1 = fct_reorder(list_dx_1, -count)) %>% 
+  group_by(list) 
+  
+dx_combo_upset <- dx %>% 
+  filter(id <= 20) 
+  
+
+#####
+
+test2 <- test %>% 
+  group_by(list_dx) %>% 
+  summarise(tot = n()) %>% 
+  ungroup() %>% 
+  arrange(-tot) %>% 
+  slice_head(n = 10) %>% 
+  mutate(dx = map_chr(list_dx, paste, collapse = ", "), 
+         dx = fct_reorder(dx, -tot))
+
+sympt_dx <- left_join(select(test,-disease_dx), sympt, by = "n") %>% 
+  filter(list_dx %in% test2$list_dx) %>% 
+  unnest_longer(list_sx)
+
+symptoms <- data5 %>% 
+  select(n, cols) %>% 
+  pivot_longer(-n) %>% 
+  filter(value == "oui") %>% 
+  group_by(name) %>% 
+  summarise(count = n()) %>% 
+  ungroup() %>% 
+  arrange(-count)
+
+symptom_combo_upset_a <- data5 %>% 
+  select(n, cols) %>% 
+  pivot_longer(-n) %>% 
+  filter(value == "oui") %>% 
+  mutate(name = str_to_sentence(str_replace_all(name, "_", " "))) %>% 
+  group_by(n) %>% 
+  summarise(list = list(name)) %>% 
+  ungroup() %>% 
+  group_by(list) %>% 
+  mutate(count = n()) %>% 
+  ungroup() %>% 
+  arrange(-count) %>% 
+  group_by(list) %>% 
+  mutate(id = cur_group_id()) %>% 
+  ungroup() %>% 
+  mutate(list_sx_1 = factor(map_chr(list, paste, collapse = ", ")),
+         list_sx_1 = fct_reorder(list_sx_1, -count)) %>% 
+  group_by(list) 
+
+  
+symptom_combo_upset <- symptom_combo_upset_a %>% 
+  filter(id <= 20)
+
+
+heatmap <- data5 %>% 
+  select(n, cols2) %>% 
+  pivot_longer(-n) %>% 
+  filter(value == "oui") %>% 
+  group_by(n) %>% 
+  summarise(list_dx = list(name)) %>% 
+  ungroup() %>% 
+  left_join(data5_a, by = "n") %>% 
+  group_by(list_dx) %>% 
+  summarise(across(c(fievre:douleurs_testiculaires), 
+                ~sum(.x == "oui", na.rm = TRUE)/(sum(.x == "oui", na.rm = TRUE) + 
+                                                   sum(.x == "non", na.rm = TRUE)))) %>% 
+  filter(list_dx %in% test2$list_dx) %>% 
+  ungroup() %>% 
+  pivot_longer(-1) %>% 
+  mutate(list_dx = factor(map_chr(list_dx, paste, collapse = ", "), 
+                          levels = test2$dx), 
+         name = factor(name, levels = rev(symptoms$name)))
+
+
+top <- ggplot(dx_combo_upset)+
+  geom_bar(aes(x = list))+
+  scale_x_upset()
+  
+  
+bottom <- ggplot(heatmap)+
+  geom_tile(aes(x = list_dx, y = name, fill = value))
 
 ```
 
 
+
 ```{r}
+
+
+dx_combo_upset_a <- data5 %>% 
+  select(n, 14:30) %>% 
+  pivot_longer(-n) %>% 
+  filter(value == "oui") %>% 
+  mutate(name = str_to_sentence(str_replace_all(name, "_", " "))) %>% 
+  group_by(n) %>% 
+  summarise(list = list(name)) %>% 
+  ungroup() %>% 
+  group_by(list) %>% 
+  mutate(count = n()) %>% 
+  ungroup() %>% 
+  arrange(-count) %>% 
+  group_by(list) %>% 
+  mutate(id = cur_group_id()) %>% 
+  ungroup() %>% 
+  mutate(list_sx_1 = factor(map_chr(list, paste, collapse = ", ")),
+         list_sx_1 = fct_reorder(list_sx_1, -count)) %>% 
+  group_by(list) 
+
+  
+symptom_combo_upset <- symptom_combo_upset_a %>% 
+  filter(id <= 20)
+
+
+
+cols <-  c("fievre", "toux", "rhinorrhee", "dyspnee", 
+                       "asthenie_physique", "courbatures",
+ "cephalee", "frisson", "anorexie", "vomissement", "douleurs_abdominales",
+ "diarrhee",  "douleurs_generalisees",   "lombalgie",  "douleurs_au_bas_ventre", 
+ "douleurs_costales", "douleurs_testiculaires")
+
+cols2 <- c("grippe", "bronchite", "ira", "syndrome_grippal",
+           "pneumonie","broncho_pneumonie")
+
+
+heatmap_dx_a <- data5 %>% 
+  select(n, cols) %>% 
+  pivot_longer(-n) %>% 
+  filter(value == "oui") %>% 
+  group_by(n) %>% 
+  mutate(name = str_to_sentence(str_replace_all(name, "_", " "))) %>% 
+  summarise(list_sx = list(name)) %>% 
+  ungroup() %>% 
+  left_join(data5, by = "n") %>% 
+  group_by(list_sx) %>% 
+  summarise(across(cols2, 
+                ~sum(.x == "oui", na.rm = TRUE)/(sum(.x == "oui", na.rm = TRUE) + 
+                                                   sum(.x == "non", na.rm = TRUE)))) %>% 
+  ungroup() %>% 
+  pivot_longer(-1)
+
+dx_single <- data5 %>% 
+  select(n, cols2) %>% 
+  pivot_longer(-n) %>% 
+  filter(value == "oui") %>% 
+  group_by(name) %>% 
+  summarise(count = n()) %>% 
+  ungroup() %>% 
+  arrange(-count)
+  
+heatmap_dx <- heatmap_dx_a  %>% 
+  mutate(list_sx_1 = factor(map_chr(list_sx, paste, collapse = ", "), 
+                          levels = unique(symptom_combo_upset_a$list_sx_1))
+         , 
+         name = factor(name, levels = rev(dx_single$name)))
+
+heatmap_dx_graph <- heatmap_dx %>% 
+  filter(list_sx_1 %in% symptom_combo_upset$list_sx_1)
+
+
+symptom_other <- symptom_combo_upset_a %>% 
+  left_join(select(data5, n, evolution, tdr), by = "n")
+
+tpr_cfr_by_presentation <- symptom_other %>% 
+  group_by(list_sx_1) %>% 
+  summarise(tpr = 100*sum(tdr == "positif", na.rm = TRUE)/(sum(tdr == "positif", na.rm = TRUE)+
+                                                         sum(tdr == "negatif", na.rm = TRUE)),
+            cfr = 100*sum(evolution == "decede", na.rm = TRUE)/sum(!is.na(evolution))
+  ) %>% 
+  ungroup() 
+
+tpr_cfr_by_presentation_strat <- symptom_other %>% 
+  group_by(list_sx_1)%>% 
+  mutate(tdr = factor(case_when(is.na(tdr) ~ "non.rensegne", 
+                         .default = tdr), 
+                      levels = c("positif", 
+                                 "negatif", 
+                                 "non.rensegne"))) %>% 
+  group_by(list_sx_1, tdr) %>% 
+  summarise(cfr = 100*sum(evolution == "decede", na.rm = TRUE)/sum(!is.na(evolution))
+  )
+
+
+
+tpr_cfr_by_presentation_graph <- tpr_cfr_by_presentation %>% 
+  filter(list_sx_1 %in% symptom_combo_upset$list_sx_1) 
+
+tpr_cfr_by_presentation_strat_graph <- tpr_cfr_by_presentation_strat %>% 
+    filter(list_sx_1 %in% symptom_combo_upset$list_sx_1) 
+
+top <- ggplot(symptom_combo_upset)+
+  geom_bar(aes(x = list))+
+  scale_x_upset(n_intersections = 20)+
+  labs(x = element_blank(), 
+       y = "Count")
+
+heat <- ggplot(heatmap_dx_graph)+
+  geom_tile(aes(x = list_sx_1, y = name, fill = value))+
+  theme(legend.position = "none",
+        axis.text.x=element_blank())+
+  labs(x = element_blank(), 
+       y = "Clinical Diagnosis")
+
+tpr_graph <- tpr_cfr_by_presentation_graph %>% 
+  ggplot()+
+  geom_col(aes(x = list_sx_1, 
+               y = tpr), color = "black")+
+  theme(axis.text.x=element_blank())+
+  labs(x = element_blank(), 
+       y = "RDT Test positivity (%)")
+
+#devtools::install_github("wilkelab/ungeviz")
+
+cfr_graph <-  ggplot()+
+  geom_col(data = tpr_cfr_by_presentation_strat_graph, aes(x = list_sx_1, 
+               y = cfr, 
+               fill = tdr, 
+               group = tdr), 
+           color = "black", 
+           position = position_dodge2(width = 0.9, preserve = "single"))+
+  scale_fill_manual(values = c("firebrick4", 
+                               "cadetblue4", 
+                               "white"))+
+  ungeviz::geom_hpline(data = tpr_cfr_by_presentation_graph, aes(x = list_sx_1, 
+               y = cfr), 
+           color = "black")+
+  theme(axis.text.x=element_blank(), 
+        legend.position = "none")+
+  labs(x = element_blank(), 
+       y = "Case Fatality Rate (%)")
+
+a <- cowplot::plot_grid(top, heat,  NULL, tpr_graph, NULL,
+                   cfr_graph, 
+                   ncol = 1, 
+                   rel_heights = c(1,1, -0.4, 1,-0.4, 1),
+                   align = "hv", 
+                   axis = "tblr")
+
+ggsave(a, filename = here::here("output", "presentation_combo_outcome.png"), 
+       dpi = 700, 
+       height = 11, 
+       width = 6, 
+       units = "in")
+
+
+```
+
+
+
+
+```{r eval = FALSE}
+
+## Correlation of RDT positivity and mortality by clinical presentation
+
+tpr_cfr_by_presentation_graph %>% 
+  ggplot()+
+  geom_point(aes(x = tpr, y = cfr))
+
+```
+
+
+
+```{r}
+
 
 
 outcome_by_presentation <- data5 %>% 
@@ -635,54 +1027,66 @@ outcome_by_presentation <- data5 %>%
             taux_mortalite = round(100*sum(evolution == "decede", na.rm = TRUE)/(sum(evolution != "decede", 
                                                                                     na.rm = TRUE)+sum(evolution == "decede", na.rm = TRUE)),1)
   ) %>% 
-  arrange(-count, -taux_mortalite, -tpr)
+  arrange(-count, -taux_mortalite, -tpr) %>% 
+  mutate(list_sympt = map_chr(list_sympt, paste, collapse = ", "), 
+         list_sympt = str_to_title(list_sympt), 
+         list_sympt = str_replace_all(list_sympt, "_", " ")) %>% 
+  rename(Presentation = list_sympt, 
+         Count = count, 
+         `Test posititivity rate (%)` = tpr,
+         `Case fatality rate (%)` = taux_mortalite)
+
+flextable::flextable(outcome_by_presentation) %>% 
+  flextable::autofit()
 
 
 missing_one <- outcome_by_presentation %>% 
   rowwise() %>% 
-  filter(!all(c("fievre", "toux") %in% list_sympt)) 
+  filter(!all(c("fievre", "toux") %in% Presentation)) 
   
 missing_both <- outcome_by_presentation %>% 
     rowwise() %>% 
-    filter(!any(c("fievre", "toux") %in% list_sympt)) 
+    filter(!any(c("fievre", "toux") %in% Presentation)) 
   
-symptom_combos <- map(list(outcome_by_presentation, missing_one, missing_both),
-    ~.x %>% rowwise()%>% 
-      mutate(list_sympt =  str_to_title(paste(list_sympt, collapse = ", ")), 
-             list_sympt = str_replace_all(list_sympt, "_", " ")) %>% 
-      rename(presentation_clinique = list_sympt, 
-             tdr_positivite_pourcent = tpr, 
-             nombre = count) %>% 
-      ungroup()
-)
-    
-symptom_combos_flex <- symptom_combos %>% 
-  map(~.x %>% 
-        rename("Symptômes" = presentation_clinique, 
-               "Nombre de Cas" = nombre, 
-               "Taux de positivité - TDR (%)" = tdr_positivite_pourcent, 
-               "Taux de mortalité (%)" = taux_mortalite) %>% 
-        flextable::flextable() %>% 
-        flextable::colformat_num(big.mark = "", digits = 1) %>% 
-        flextable::autofit()
-      )
-
-map2(symptom_combos_flex, 
-     list("symptom_outcome_all", "symptom_outcome_missing_fever_and_or_cough", 
-          "symptom_outcome_missing_both_fever_and_cough"), 
-     function(x, y){flextable::save_as_docx(x, path = paste0(here::here("linelist", 
-                                                                        "output"), "/", y, ".docx"))
-     })
-
-
+#  symptom_combos <- map(list(outcome_by_presentation, missing_one, missing_both),
+#      ~.x %>% rowwise()%>% 
+#        mutate(Presentation =  str_to_title(paste(Presentation, collapse = ", ")), 
+#               Presentation = str_replace_all(Presentation, "_", " ")) %>% 
+#        rename(presentation_clinique = Presentation, 
+#               tdr_positivite_pourcent = tpr, 
+#               nombre = count) %>% 
+#        ungroup()
+#  )
+#      
+#  symptom_combos_flex <- symptom_combos %>% 
+#    map(~.x %>% 
+#          rename("Symptômes" = presentation_clinique, 
+#                 "Nombre de Cas" = nombre, 
+#                 "Taux de positivité - TDR (%)" = tdr_positivite_pourcent, 
+#                 "Taux de mortalité (%)" = taux_mortalite) %>% 
+#          flextable::flextable() %>% 
+#          flextable::colformat_num(big.mark = "", digits = 1) %>% 
+#          flextable::autofit()
+#        )
+#  
+#  map2(symptom_combos_flex, 
+#       list("symptom_outcome_all", "symptom_outcome_missing_fever_and_or_cough", 
+#            "symptom_outcome_missing_both_fever_and_cough"), 
+#       function(x, y){flextable::save_as_docx(x, path = paste0(here::here("linelist", 
+#                                                                          "output"), "/", y, ".docx"))
+#       })
+#  
+#  cut from below  `r sum(symptom_combos[[3]]$nombre, na.rm = TRUE)`
+#  
 ```
 
 
-There are `r sum(symptom_combos[[3]]$nombre, na.rm = TRUE)` patients that were 
+There are CUT patients that were 
 listed without _either_ fever or cough. Clinical presentations, counts, malaria
 RDT test positivity rate, and case fatality rates are listed below. 
 
-```{r}
+
+```{r eval = FALSE}
 
 symptom_combos_flex[[3]]
 
@@ -692,7 +1096,7 @@ Given the mortality rate in this group to date, some revision of the case
 definition is advised to further hone in on the population of interest. (These
 individuals are retained for the following analyses.)
 
-# Exploration of Paludisme and Grippe variables
+# Clinical diagnosis variables
 There are multiple variables in the data set requiring a diagnosis to be made
 after examining the patient. Symptom data for each are examined to determine if
 consistency in these determinations can be seen.
@@ -710,7 +1114,7 @@ dx <-  data5 %>%
 
 
 
-dx_dl <- treatment_spelling %>% 
+dx_dl <- dx %>% 
  downloadthis::download_this(
     output_name = "diagnoses",
     output_extension = ".xlsx",
@@ -870,7 +1274,7 @@ tpr_weekly
 
 ### Presentation of individuals classified as having malaria
 
-```{r}
+```{r }
 palu_pos_sym <- data5_a %>% 
   filter(paludisme_1 == "oui") %>% 
   select(n, 14:30) %>% 
@@ -1010,108 +1414,9 @@ full
 
 ## Focus on Respiratory Disease
 
-```{r}
-cols <-  c("fievre", "toux", "rhinorrhee", "dyspnee", 
-                       "asthenie_physique", "courbatures",
- "cephalee", "frisson", "anorexie", "vomissement", "douleurs_abdominales",
- "diarrhee",  "douleurs_generalisees",   "lombalgie",  "douleurs_au_bas_ventre", 
- "douleurs_costales", "douleurs_testiculaires")
-
-cols2 <- c("grippe", "bronchite", "ira", "syndrome_grippal",
-           "pneumonie","broncho_pneumonie", "paludisme_1")
-
-
-# number of respiratory diagnoses each participant carries
-test <- data5_a %>% 
-  select(n, cols2) %>% 
-  pivot_longer(-n) %>% 
-  filter(value == "oui") %>% 
-  group_by(n) %>% 
-  mutate(disease_dx = n()) %>% 
-  ungroup() %>% 
-  select(-value) %>% 
-  group_by(n) %>% 
-  mutate(list_dx = list(name)) %>% 
-  ungroup() %>% 
-  select(-name) %>% 
-  distinct(.keep_all = TRUE)
-
-
-
-ggplot(test)+
-  geom_bar(aes(x = list_dx))+
-  scale_x_upset()
-
-
-
-sympt <- data5_a %>% 
-  select(n, cols) %>% 
-  pivot_longer(-n) %>% 
-  filter(value == "oui") %>% 
-  group_by(n) %>% 
-  mutate(list_sx = list(name)) %>% 
-  ungroup() %>% 
-  select(-c(name, value)) %>% 
-  distinct(.keep_all = TRUE)
-
-
-
-test2 <- test %>% 
-  group_by(list_dx) %>% 
-  summarise(tot = n()) %>% 
-  ungroup() %>% 
-  arrange(-tot) %>% 
-  slice_head(n = 10) %>% 
-  mutate(dx = map_chr(list_dx, paste, collapse = ", "), 
-         dx = fct_reorder(dx, -tot))
-
-sympt_dx <- left_join(select(test,-disease_dx), sympt, by = "n") %>% 
-  filter(list_dx %in% test2$list_dx) %>% 
-  unnest_longer(list_sx)
-
-symptoms <- data5_a %>% 
-  select(n, cols) %>% 
-  pivot_longer(-n) %>% 
-  filter(value == "oui") %>% 
-  group_by(name) %>% 
-  summarise(count = n()) %>% 
-  ungroup() %>% 
-  arrange(-count)
-
-heatmap <- data5_a %>% 
-  select(n, cols2) %>% 
-  pivot_longer(-n) %>% 
-  filter(value == "oui") %>% 
-  group_by(n) %>% 
-  summarise(list_dx = list(name)) %>% 
-  ungroup() %>% 
-  left_join(data5_a, by = "n") %>% 
-  group_by(list_dx) %>% 
-  summarise(across(c(fievre:douleurs_testiculaires), 
-                ~sum(.x == "oui", na.rm = TRUE)/(sum(.x == "oui", na.rm = TRUE) + 
-                                                   sum(.x == "non", na.rm = TRUE)))) %>% 
-  filter(list_dx %in% test2$list_dx) %>% 
-  ungroup() %>% 
-  pivot_longer(-1) %>% 
-  mutate(list_dx = factor(map_chr(list_dx, paste, collapse = ", "), 
-                          levels = test2$dx), 
-         name = factor(name, levels = rev(symptoms$name)))
-
-
-top <- ggplot(test2)+
-  geom_col(aes(x = dx, y = tot))
-  
-  
-bottom <- ggplot(heatmap)+
-  geom_tile(aes(x = list_dx, y = name, fill = value))
+```{r eval = FALSE}
 
   
-  
-  filter(grippe == "oui") %>% 
-  select(cols, cols2)
-  group_by(!!!cols, !!!cols2) %>% 
-  summarise(counts = n())
-
 prop_var <- list("bronchite", "ira", "paludisme", "grippe", "syndrome_grippal",
                  "pneumonie","broncho_pneumonie", "autres_diagnostics")
 
@@ -1136,11 +1441,11 @@ sympt_prop_list <- map(prop_var, function(x){
   list_rbind(names_to = "dx") 
 
 
-%>% 
-  mutate(across(c(decede, non_decede), ~replace_na(.x, 0))) %>% 
-  mutate(total = rowSums(select(., decede, non_decede)), 
-         cfr = round(100*decede/total, 1))
-
+#  %>% 
+#    mutate(across(c(decede, non_decede), ~replace_na(.x, 0))) %>% 
+#    mutate(total = rowSums(select(., decede, non_decede)), 
+#           cfr = round(100*decede/total, 1))
+#  
 
 
 
