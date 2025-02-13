@@ -465,6 +465,158 @@ data set meet the case definition.
 
 ```{r include = FALSE}
 
+symptoms <- data5 %>% 
+  select(n, 14:30) %>% 
+  pivot_longer(-n) %>% 
+  filter(value == "oui") %>% 
+  group_by(name) %>% 
+  summarise(count = n()) %>% 
+  ungroup() %>% 
+  mutate(name = str_to_sentence(str_replace_all(name, "_", "\n")),
+         name = case_when(name == "Douleurs\nAu\nBas\nVentre" ~ "Douleurs\nau bas\nVentre", 
+                          .default = name),
+         name = fct_reorder(name, -count)) %>% 
+  arrange(name)
+
+ggplot(symptoms)+
+  geom_col(aes(x = name, y = count))+
+  theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1))+
+  labs(x = "Symptom", 
+       y = "Count")
+  
+
+```
+
+
+```{r}
+
+symptom_combo_upset_a <- data5 %>% 
+  select(n, 14:30) %>% 
+  pivot_longer(-n) %>% 
+  filter(value == "oui") %>% 
+  mutate(name = str_to_sentence(str_replace_all(name, "_", " "))) %>% 
+  group_by(n) %>% 
+  summarise(list = list(name)) %>% 
+  ungroup() %>% 
+  group_by(list) %>% 
+  mutate(count = n()) %>% 
+  ungroup() %>% 
+  arrange(-count) %>% 
+  group_by(list) %>% 
+  mutate(id = cur_group_id()) %>% 
+  ungroup() %>% 
+  mutate(list_sx_1 = factor(map_chr(list, paste, collapse = ", ")),
+         list_sx_1 = fct_reorder(list_sx_1, -count)) %>% 
+  group_by(list) 
+
+  
+symptom_combo_upset <- symptom_combo_upset_a %>% 
+  filter(id <= 20)
+
+
+
+cols <-  c("fievre", "toux", "rhinorrhee", "dyspnee", 
+                       "asthenie_physique", "courbatures",
+ "cephalee", "frisson", "anorexie", "vomissement", "douleurs_abdominales",
+ "diarrhee",  "douleurs_generalisees",   "lombalgie",  "douleurs_au_bas_ventre", 
+ "douleurs_costales", "douleurs_testiculaires")
+
+cols2 <- c("grippe", "bronchite", "ira", "syndrome_grippal",
+           "pneumonie","broncho_pneumonie")
+
+
+heatmap_dx_a <- data5 %>% 
+  select(n, cols) %>% 
+  pivot_longer(-n) %>% 
+  filter(value == "oui") %>% 
+  group_by(n) %>% 
+  mutate(name = str_to_sentence(str_replace_all(name, "_", " "))) %>% 
+  summarise(list_sx = list(name)) %>% 
+  ungroup() %>% 
+  left_join(data5, by = "n") %>% 
+  group_by(list_sx) %>% 
+  summarise(across(cols2, 
+                ~sum(.x == "oui", na.rm = TRUE)/(sum(.x == "oui", na.rm = TRUE) + 
+                                                   sum(.x == "non", na.rm = TRUE)))) %>% 
+  ungroup() %>% 
+  pivot_longer(-1)
+
+dx_single <- data5 %>% 
+  select(n, cols2) %>% 
+  pivot_longer(-n) %>% 
+  filter(value == "oui") %>% 
+  group_by(name) %>% 
+  summarise(count = n()) %>% 
+  ungroup() %>% 
+  arrange(-count)
+  
+heatmap_dx <- heatmap_dx_a  %>% 
+  mutate(list_sx_1 = factor(map_chr(list_sx, paste, collapse = ", "), 
+                          levels = unique(symptom_combo_upset_a$list_sx_1))
+         , 
+         name = factor(name, levels = rev(dx_single$name)))
+
+heatmap_dx_graph <- heatmap_dx %>% 
+  filter(list_sx_1 %in% symptom_combo_upset$list_sx_1)
+
+
+symptom_other <- symptom_combo_upset_a %>% 
+  left_join(select(data5, n, evolution, tdr), by = "n")
+
+tpr_cfr_by_presentation <- symptom_other %>% 
+  group_by(list_sx_1) %>% 
+  summarise(tpr = 100*sum(tdr == "positif", na.rm = TRUE)/(sum(tdr == "positif", na.rm = TRUE)+
+                                                         sum(tdr == "negatif", na.rm = TRUE)),
+            cfr = 100*sum(evolution == "decede", na.rm = TRUE)/sum(!is.na(evolution))
+  )
+
+
+tpr_cfr_by_presentation_graph <- tpr_cfr_by_presentation %>% 
+  filter(list_sx_1 %in% symptom_combo_upset$list_sx_1)
+
+top <- ggplot(symptom_combo_upset)+
+  geom_bar(aes(x = list))+
+  scale_x_upset(n_intersections = 20)+
+  labs(x = element_blank(), 
+       y = "Count")
+
+heat <- ggplot(heatmap_dx_graph)+
+  geom_tile(aes(x = list_sx_1, y = name, fill = value))+
+  theme(legend.position = "none",
+        axis.text.x=element_blank())+
+  labs(x = element_blank(), 
+       y = "Clinical Diagnosis")
+
+tpr_graph <- tpr_cfr_by_presentation_graph %>% 
+  ggplot()+
+  geom_col(aes(x = list_sx_1, 
+               y = tpr), color = "black")+
+  theme(axis.text.x=element_blank())+
+  labs(x = element_blank())
+
+cfr_graph <- tpr_cfr_by_presentation_graph %>% 
+  ggplot()+
+  geom_col(aes(x = list_sx_1, 
+               y = cfr), 
+           color = "black",
+           fill = "firebrick4")+
+  theme(axis.text.x=element_blank())+
+  labs(x = element_blank(), 
+       y = "Case Fatality Rate (%)")
+
+cowplot::plot_grid(top, heat,  NULL,
+                   cfr_graph, 
+                   ncol = 1, 
+                   rel_heights = c(1,1, -0.4, 1),
+                   align = "hv", 
+                   axis = "tblr")
+
+```
+
+
+```{r}
+
+
 outcome_by_presentation <- data5 %>% 
   select(n, 14:30) %>% 
   pivot_longer(-n) %>% 
@@ -885,9 +1037,23 @@ test <- data5_a %>%
   distinct(.keep_all = TRUE)
 
 
+
 ggplot(test)+
   geom_bar(aes(x = list_dx))+
   scale_x_upset()
+
+
+
+sympt <- data5_a %>% 
+  select(n, cols) %>% 
+  pivot_longer(-n) %>% 
+  filter(value == "oui") %>% 
+  group_by(n) %>% 
+  mutate(list_sx = list(name)) %>% 
+  ungroup() %>% 
+  select(-c(name, value)) %>% 
+  distinct(.keep_all = TRUE)
+
 
 
 test2 <- test %>% 
@@ -895,11 +1061,49 @@ test2 <- test %>%
   summarise(tot = n()) %>% 
   ungroup() %>% 
   arrange(-tot) %>% 
-  slice_head(n = 10)
+  slice_head(n = 10) %>% 
+  mutate(dx = map_chr(list_dx, paste, collapse = ", "), 
+         dx = fct_reorder(dx, -tot))
+
+sympt_dx <- left_join(select(test,-disease_dx), sympt, by = "n") %>% 
+  filter(list_dx %in% test2$list_dx) %>% 
+  unnest_longer(list_sx)
+
+symptoms <- data5_a %>% 
+  select(n, cols) %>% 
+  pivot_longer(-n) %>% 
+  filter(value == "oui") %>% 
+  group_by(name) %>% 
+  summarise(count = n()) %>% 
+  ungroup() %>% 
+  arrange(-count)
+
+heatmap <- data5_a %>% 
+  select(n, cols2) %>% 
+  pivot_longer(-n) %>% 
+  filter(value == "oui") %>% 
+  group_by(n) %>% 
+  summarise(list_dx = list(name)) %>% 
+  ungroup() %>% 
+  left_join(data5_a, by = "n") %>% 
+  group_by(list_dx) %>% 
+  summarise(across(c(fievre:douleurs_testiculaires), 
+                ~sum(.x == "oui", na.rm = TRUE)/(sum(.x == "oui", na.rm = TRUE) + 
+                                                   sum(.x == "non", na.rm = TRUE)))) %>% 
+  filter(list_dx %in% test2$list_dx) %>% 
+  ungroup() %>% 
+  pivot_longer(-1) %>% 
+  mutate(list_dx = factor(map_chr(list_dx, paste, collapse = ", "), 
+                          levels = test2$dx), 
+         name = factor(name, levels = rev(symptoms$name)))
 
 
-a <- test2$list_dx
-
+top <- ggplot(test2)+
+  geom_col(aes(x = dx, y = tot))
+  
+  
+bottom <- ggplot(heatmap)+
+  geom_tile(aes(x = list_dx, y = name, fill = value))
 
   
   
