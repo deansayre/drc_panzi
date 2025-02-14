@@ -709,24 +709,6 @@ cols2 <- c("grippe", "bronchite", "ira", "syndrome_grippal",
 #  
 
 
-mutate(name = str_to_sentence(str_replace_all(name, "_", " "))) %>% 
-  group_by(n) %>% 
-  summarise(list = list(name)) %>% 
-  ungroup() %>% 
-  group_by(list) %>% 
-  mutate(count = n()) %>% 
-  ungroup() %>% 
-  arrange(-count) %>% 
-  group_by(list) %>% 
-  mutate(id = cur_group_id()) %>% 
-  ungroup() %>% 
-  mutate(list_sx_1 = factor(map_chr(list, paste, collapse = ", ")),
-         list_sx_1 = fct_reorder(list_sx_1, -count)) %>% 
-  group_by(list) 
-
-
-
-
 dx <- data5 %>% 
   select(n, cols2) %>% 
   pivot_longer(-n) %>% 
@@ -751,19 +733,19 @@ dx_combo_upset <- dx %>%
   
 
 #####
-
-test2 <- test %>% 
-  group_by(list_dx) %>% 
-  summarise(tot = n()) %>% 
-  ungroup() %>% 
-  arrange(-tot) %>% 
-  slice_head(n = 10) %>% 
-  mutate(dx = map_chr(list_dx, paste, collapse = ", "), 
-         dx = fct_reorder(dx, -tot))
-
-sympt_dx <- left_join(select(test,-disease_dx), sympt, by = "n") %>% 
-  filter(list_dx %in% test2$list_dx) %>% 
-  unnest_longer(list_sx)
+# 
+# test2 <- test %>% 
+#   group_by(list_dx) %>% 
+#   summarise(tot = n()) %>% 
+#   ungroup() %>% 
+#   arrange(-tot) %>% 
+#   slice_head(n = 10) %>% 
+#   mutate(dx = map_chr(list_dx, paste, collapse = ", "), 
+#          dx = fct_reorder(dx, -tot))
+# 
+# sympt_dx <- left_join(select(test,-disease_dx), sympt, by = "n") %>% 
+#   filter(list_dx %in% test2$list_dx) %>% 
+#   unnest_longer(list_sx)
 
 symptoms <- data5 %>% 
   select(n, cols) %>% 
@@ -802,20 +784,23 @@ heatmap <- data5 %>%
   select(n, cols2) %>% 
   pivot_longer(-n) %>% 
   filter(value == "oui") %>% 
+  mutate(name = str_to_sentence(str_replace_all(name, "_", " "))) %>% 
   group_by(n) %>% 
   summarise(list_dx = list(name)) %>% 
   ungroup() %>% 
-  left_join(data5_a, by = "n") %>% 
+  left_join(data5, by = "n") %>% 
   group_by(list_dx) %>% 
   summarise(across(c(fievre:douleurs_testiculaires), 
                 ~sum(.x == "oui", na.rm = TRUE)/(sum(.x == "oui", na.rm = TRUE) + 
                                                    sum(.x == "non", na.rm = TRUE)))) %>% 
-  filter(list_dx %in% test2$list_dx) %>% 
   ungroup() %>% 
   pivot_longer(-1) %>% 
-  mutate(list_dx = factor(map_chr(list_dx, paste, collapse = ", "), 
-                          levels = test2$dx), 
+  mutate(list_dx1 = factor(map_chr(list_dx, paste, collapse = ", "), 
+                          levels = unique(dx$list_dx_1)), 
          name = factor(name, levels = rev(symptoms$name)))
+
+heatmap_graph <- heatmap %>% 
+  filter(list_dx1 %in% dx_combo_upset$list_dx_1)
 
 
 top <- ggplot(dx_combo_upset)+
@@ -823,8 +808,8 @@ top <- ggplot(dx_combo_upset)+
   scale_x_upset()
   
   
-bottom <- ggplot(heatmap)+
-  geom_tile(aes(x = list_dx, y = name, fill = value))
+bottom <- ggplot(heatmap_graph)+
+  geom_tile(aes(x = list_dx1, y = name, fill = value))
 
 ```
 
