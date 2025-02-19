@@ -7,20 +7,21 @@ output:
     code_folding: hide
     code_download: true
     highlight: zenburn
-    number_sections: yes
+    number_sections: no
     theme: spacelab
-    toc: yes
-    toc_collapse: no
-    toc_depth: 3
-    toc_float: yes
+    toc: no
+    includes:
+      in_header: header.html
 
 ---
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
 ```
+#  {.tabset .tabset-fade}
 
-# Data importation and cleaning
+## **Data cleaning** {.tabset .tabset-pills}
+
 
 ```{r}
 
@@ -101,7 +102,7 @@ the most recent of which is dated `r line_last`.
 Lab data (file name _`r lab_name`_) contains `r nrow(lab)` observations, 
 the most recent of which is dated `r lab_last`.
 
-## Data missingness
+### Data missingness
 The number of missing observations for each variable are noted below. 
 Note variables are listed in snakecase.
 ```{r}
@@ -129,7 +130,7 @@ flextable::flextable(missing_obs) %>%
   
 ```
 
-## Spelling changes
+### Spelling changes
 Basic formatting and spelling changes are coded here. Explore code to review 
 changes made, along with the Excel file below. 
 
@@ -241,7 +242,7 @@ spell1
 
 
 
-## Removal of duplicates
+### Duplicates
 
 
 ```{r}
@@ -314,7 +315,7 @@ dupes
 
 ```
 
-## Processing complication and treatment data
+### Processing complication and treatment data
 These data are entered as free text. Here they are standardized and processed
 so as to be more useable. New variables for "any artemisinin received", "any 
 antimalarial received" (artemisinin or quinine), and "any antibiotic received"
@@ -462,12 +463,12 @@ comp_spell_dl
 ```
 
 
-# Presentation and outcomes of patients
+## **Presentation and outcomes** {.tabset .tabset-pills}
 Additional information on patient presentation is provided in subsequent 
 sections. This portion serves to ensure that all individuals included in the
 data set meet the case definition. 
 
-## Counts of individual symptoms
+### Counts of individual symptoms
 ```{r}
 
 symptoms <- data5 %>% 
@@ -491,7 +492,23 @@ ggplot(symptoms)+
   
 
 ```
-## Symptom combinations, clinical diagnoses and case fatality rate
+
+### Symptom combinations, clinical diagnoses and case fatality rate
+
+**A** Upset plot of most common symptom combinations. Bar chart at the top 
+represents case counts of the symptom combinations indicated by points below 
+(individual symptoms present are indicated by black point). **B** Heatmap 
+indicating the diagnoses listed for those with the symptom combinations above. 
+Darker colors indicate a higher proportion of those with the symptom combination
+being listed with the respiratory diagnosis (black = 100%, white = 0%). **C** 
+Malaria RDT test positivity rate among those with above symptom combinations who
+were tested for malaria. Those without RDT results are excluded. **D** Case fatality
+rates of those presenting with above symptom combination. The black bar is the 
+overall case fatality rate; red bars represent the case fatality rate for those 
+with a positive RDT; green bars represent the case fatality rate for those 
+with a negative RDT; white bars represent the case fatality rate for those that
+do not have RDT information (and presumably were not tested for malaria).
+
 
 ```{r}
 
@@ -553,12 +570,17 @@ dx_single <- data5 %>%
   group_by(name) %>% 
   summarise(count = n()) %>% 
   ungroup() %>% 
+  mutate(name = str_to_sentence(str_replace_all(name, "_", " ")), 
+         name = case_when(name == "Ira" ~ "IRA", 
+                          .default = name)) %>% 
   arrange(-count)
   
 heatmap_dx <- heatmap_dx_a  %>% 
   mutate(list_sx_1 = factor(map_chr(list_sx, paste, collapse = ", "), 
-                          levels = unique(symptom_combo_upset_a$list_sx_1))
-         , 
+                          levels = unique(symptom_combo_upset_a$list_sx_1)), 
+         name = str_to_sentence(str_replace_all(name, "_", " ")), 
+         name = case_when(name == "Ira" ~ "IRA", 
+                          .default = name),
          name = factor(name, levels = rev(dx_single$name)))
 
 heatmap_dx_graph <- heatmap_dx %>% 
@@ -640,7 +662,8 @@ cfr_graph <-  ggplot()+
 a <- cowplot::plot_grid(top, heat,  NULL, tpr_graph, NULL,
                    cfr_graph, 
                    ncol = 1, 
-                   rel_heights = c(1,1, -0.4, 1,-0.4, 1),
+                   labels = c("A", "B", "", "C", "","D"),
+                   rel_heights = c(1,1, -0.5, 1,-0.5, 1),
                    align = "hv", 
                    axis = "tblr")
 
@@ -655,12 +678,11 @@ ggsave(a, filename = here::here("output", "presentation_combo_outcome.png"),
 
 ![](output/presentation_combo_outcome.png)
 
-# Diagnoses and outcomes of patients
-## Counts of individual clinical diagnoses
+## **Diagnoses and outcomes** {.tabset .tabset-pills}
+
+### Counts of individual clinical diagnoses
 
 ```{r}
-
-# to do, palu clinical dx performance metrics, change to 
 
 prop_var <- c("bronchite", "ira", "grippe", "syndrome_grippal",
                  "pneumonie","broncho_pneumonie", "paludisme_1", "tdr")
@@ -714,7 +736,7 @@ dx_dl
 ```
 
 
-## Focus on Malaria {.tabset .tabset-pills}
+### Focus on Malaria {.tabset .tabset-pills}
 
 Summary: Clinical determination of malaria infection does not appear to be a 
 reliable variable for analyses. HRP2-based rapid diagnostic tests may 
@@ -725,7 +747,7 @@ alone. Future data collection efforts may benefit from additional questions of
 all individuals with a positive RDT documenting the history of recent malaria 
 infection/treatment.
 
-### Permformance metrics of clinical classification in data set
+#### Permformance metrics of clinical classification in data set
 
 ```{r}
 
@@ -897,6 +919,7 @@ c <- sum(tpr_weekly_unk$`Paludisme clinique +`, na.rm = TRUE)+
 
 flext_metrex <- reduce(list(tpr_weekly_pos, tpr_weekly_neg, tpr_weekly_unk), 
                        ~left_join(.x, .y, by = "Week")) %>% 
+  arrange(Week) %>% 
   flextable::flextable() %>% 
   flextable::set_header_labels(`Paludisme clinique +.x` = "Paludisme clinique +",
                                `Paludisme clinique -.x` = "Paludisme clinique -",
@@ -934,11 +957,13 @@ Weekly performance metrics are provided below.
 
 ```{r}
 
-tpr_weekly
+tpr_weekly %>% 
+  flextable::flextable() %>% 
+  flextable::autofit()
 
 ```
 
-### Clinical presentation of individuals classified as having malaria
+#### Clinical presentation of individuals classified as having malaria
 
 ```{r }
 palu_pos_sym <- data5_a %>% 
@@ -1057,6 +1082,31 @@ plot_1 <- ggplot(palu_pos_graph)+
   labs(x = element_blank(), 
        y = "Counts")
 
+legend <- cowplot::get_legend(palu_pos_graph %>% 
+                                mutate(tdr1 = factor(case_when(tdr1 == "positif" ~ "Positif", 
+                                                        tdr1 == "negatif" ~ "Negatif", 
+                                                        tdr1 == "unknown" ~ "Pas d'information", 
+                                                        .default = "erreur"), 
+                                                     levels = c("Pas d'information", 
+                                                                "Negatif", 
+                                                                "Positif"))) %>% 
+                                ggplot()+
+  geom_col(aes(x = sympt, y = count.y, fill = tdr1), 
+           color = "grey50",
+           position = "stack")+
+  scale_fill_manual(values = rev(color3))+
+  theme(axis.text.x = element_blank())+
+  labs(x = element_blank(), 
+       y = "Counts", 
+       fill = "TDR")
+)
+
+ggsave(cowplot::ggdraw(legend), 
+       filename = here::here("output", "tdr_results.png"), 
+       dpi = 700, 
+       height = 3, 
+       width = 2, 
+       units = "in")
 
 
 right <- cowplot::plot_grid(plot_1, points, ncol = 1,
@@ -1078,7 +1128,7 @@ full
 ```
 
 
-### Clinical presentation of individuals classified as *NOT* having malaria
+#### Clinical presentation of individuals classified as *NOT* having malaria
 
 ```{r }
 palu_pos_sym <- data5_a %>% 
@@ -1227,7 +1277,7 @@ negative by clinical means `r a`.
 
 Clinical determination of 'malaria' will be ignored in favor of TDR results.
 
-## Focus on Respiratory Diagonses {.tabset .tabset-pills}
+### Focus on Respiratory Diagonses 
 
 Summary: Clinical determination of different respiratory infections does not 
 appear to be reliable variable for analyses based on available information. 
@@ -1398,6 +1448,7 @@ bottom <- ggplot()+
 
 a <- cowplot::plot_grid(top, mid,  NULL, bottom,
                    ncol = 1, 
+                   labels = c("A", "B", "", "C"),
                    rel_heights = c(1,1, -0.2, 1),
                    align = "hv", 
                    axis = "tblr")
@@ -1412,36 +1463,26 @@ ggsave(a, filename = here::here("output", "diagnosis_combo_outcome.png"),
 ```
 
 
+#### Figure of outcomes
+
+**A** Upset plot of most common clinical diagnosis combinations. Bar chart at the top 
+represents case counts of the diagnosis combinations indicated by points below 
+(individual symptoms present are indicated by black point). **B** Heatmap 
+indicating the symptoms listed for those with the diagnosis combinations above. 
+Darker colors indicate a higher proportion of those with the diagnosis combination
+being listed with the symptoms exhibited (black = 100%, white = 0%). **C** Case 
+fatality rates of those presenting with above diagnosis combination. The black bar is the 
+overall case fatality rate; red bars represent the case fatality rate for those 
+with a positive RDT; green bars represent the case fatality rate for those 
+with a negative RDT; white bars represent the case fatality rate for those that
+do not have RDT information (and presumably were not tested for malaria).
 
 
 ![](output/diagnosis_combo_outcome.png)
 
+```{r eval = FALSE}
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-```{r}
-
+# to delete... superfluous
 
 dx_combo_upset_a <- data5 %>% 
   select(n, 14:30) %>% 
@@ -1601,8 +1642,6 @@ ggsave(a, filename = here::here("output", "presentation_combo_outcome.png"),
 ```
 
 
-
-
 ```{r eval = FALSE}
 
 ## Correlation of RDT positivity and mortality by clinical presentation
@@ -1613,7 +1652,7 @@ tpr_cfr_by_presentation_graph %>%
 
 ```
 
-
+#### Table of outcomes
 
 ```{r}
 
@@ -1648,8 +1687,8 @@ outcome_by_presentation <- data5 %>%
 
 outcome_by_presentation %>% 
   select(-list_sympt) %>% 
-flextable::flextable() %>% 
-  flextable::autofit()
+  DT::datatable(filter = 'top')
+
 
 
 all <- outcome_by_presentation %>% 
@@ -1681,6 +1720,14 @@ symptom_combos <- list(all, missing_one, missing_both)
          flextable::autofit()
        )
  
+ 
+ 
+```
+ 
+
+
+```{r echo = FALSE, include = FALSE}
+
  map2(symptom_combos_flex, 
       list("symptom_outcome_all", "symptom_outcome_missing_fever_and_or_cough", 
            "symptom_outcome_missing_both_fever_and_cough"), 
@@ -1706,7 +1753,7 @@ symptom_combos_flex[[3]]
 
 
 
-# Epidemiological curves
+## **Epidemiological curves** {.tabset .tabset-pills}
 
 ```{r}
 data_6 <- data5_a %>% 
@@ -1753,14 +1800,21 @@ all_data <- list(data_6,
                  resp_mal, 
                  other)
 
+all_weeks <- tibble(week = unique(data_6$year_week_factor))
+
 all_epicurves <- map(all_data, 
     ~.x %>% 
       group_by(year_week_factor) %>% 
       summarise(count = n(), 
                 cfr = 100*sum(decede_non == "decede", na.rm = TRUE)/
                   (sum(decede_non == "decede", na.rm = TRUE)+
-                     sum(decede_non == "non_decede", na.rm = TRUE)))
+                     sum(decede_non == "non_decede", na.rm = TRUE))) %>% 
+      ungroup() %>% 
+      full_join(all_weeks, by = c("year_week_factor" = "week")) %>% 
+      mutate(across(c(count, cfr), ~replace_na(.x, 0)))
 )
+
+temp <- all_epicurves[[2]]
 
 
 epicurves <- map2(all_epicurves, list("grey",
@@ -1776,6 +1830,8 @@ epicurves <- map2(all_epicurves, list("grey",
                             color = "black", 
                             fill = y)+
                      coord_cartesian(ylim = c(0, max+20))+
+                     scale_x_discrete(breaks = unique(data_6$year_week_factor), 
+                                      labels = unique(data_6$year_week_factor))+
                      labs(x = element_blank(), 
                           y = "Count")+
                      theme(axis.text.x = element_blank())
@@ -1799,11 +1855,17 @@ epicurves <- map2(all_epicurves, list("grey",
                  }
 )
 
+```
+
+### All Cases
+
+```{r}
+
 epicurves[[1]]
 
 ```
 
-## TDR Positive
+### TDR Positive
 
 ```{r}
 
@@ -1811,7 +1873,7 @@ epicurves[[2]]
 
 ```
 
-## Respiratory (Fever + Cough)
+### Respiratory (Fever + Cough)
 
 ```{r}
 
@@ -1819,7 +1881,7 @@ epicurves[[3]]
 
 ```
 
-## TDR Positive + Respiratory
+### TDR Positive + Respiratory
 
 ```{r}
 
@@ -1827,7 +1889,7 @@ epicurves[[4]]
 
 ```
 
-## Other (TDR negative/unknown + not _both_ fever and cough)
+### Other (TDR negative/unknown + not _both_ fever and cough)
 
 ```{r}
 
@@ -1835,45 +1897,57 @@ epicurves[[5]]
 
 ```
 
-## Malnutrition
+### Malnutrition
 Data on malnutrition are only available for `r nrow(mas)` individuals at the 
 of coding; these are not shown graphically
 
-## Focus on deaths by time and cause
+
+
+## **Patient demographics**
+
+### Table
+
 ```{r}
 
+prop_var <- list("age_cat3",
+                 "sexe")
 
-mal <- filter(data_6, tdr1 == "positif" & cough_fever != "both")
-resp <- filter(data_6, cough_fever == "both" & tdr1 == "negatif")
-resp_mal <- filter(data_6, tdr1 == "positif" & cough_fever == "both")
-unk <- filter(data_6, tdr1 == "unknown")
+map(prop_var, function(x){
+           y <- sym(x)
+           a <- data5_a %>%
+             group_by(decede_non, {{y}}) %>% 
+             summarise(count = n()) %>% 
+             pivot_wider(names_from = "decede_non", 
+                         values_from = "count") %>% 
+             rename(category = 1)
 
-
-
-temp <- filter(data_6, cough_fever == "both" | tdr1 == "positif")
-other <- filter(data_6, !n %in% temp$n)
-
-
-all_deaths <- map(list(mal, resp, resp_mal, unk), 
-    ~.x %>% 
-      filter(decede_non == "decede") %>% 
-      group_by(year_week_factor) %>% 
-      summarise(count = n())
-) %>% 
-  set_names(c("malaria_only", "respiratory_only", 
-              "malaria_and_respiratory", "unknown")) %>% 
-  list_rbind(names_to = "presentation") %>% 
-  complete(year_week_factor, presentation, fill = list(count = 0))
-
-ggplot(all_deaths)+
-  geom_col(aes(x = year_week_factor, y = count, 
-               fill = presentation, group = presentation),
-           position = "dodge")
-
+         return(a)
+         }
+         ) %>% 
+  set_names(prop_var) %>% 
+  list_rbind(names_to = "element") %>% 
+  mutate(across(c(decede, non_decede), ~replace_na(.x, 0))) %>% 
+  mutate(total = rowSums(select(., decede, non_decede)), 
+         cfr = round(100*decede/total, 1), 
+         element = case_when(element == "age_cat3" ~ "Age (annees)", 
+                             element == "sexe" ~ "Sexe", 
+                             .default = "error"), 
+         category = case_when(category == "m" ~ "Masculin", 
+                              category == "f" ~ "Feminin", 
+                              .default = category)) %>% 
+  rename(Variable = element, 
+         Groupe = category, 
+         "Decede\n(nombre)" = decede, 
+         "Non decede\n(nombre)" = non_decede, 
+         `Total (nombre)` = total, 
+         `Taux de mortalite (%)` = cfr) %>% 
+  flextable::flextable() %>% 
+  flextable::autofit()
+           
+  
 ```
 
-
-# Patient demographics
+### Age/Sex Pyramid
 
 ```{r}
 
@@ -1921,25 +1995,105 @@ age_pyr <- map(list(data5_a, deces_5),
   scale_fill_manual(values = c("coral2", "cadetblue"))+
     theme_minimal()+
   coord_flip()+
-    labs(x = "Count", 
-         y = "Age category")+
+    labs(y = "Count", 
+         x = "Age category")+
     scale_y_continuous(labels = function(x) abs(x))
     
 )
 
-age_pyr[[2]]
+pyr_button <- download_this(age_pyr[[1]])
 
-prop_var <- list("age_cat1",
-                 "age_cat2", 
-                 "sexe", 
-                 "as",
-                 "fievre",
-                 "toux", 
-                 "consult_pre_dec01")
+age_pyr[[1]]
 
-demo_prop_list <- map(prop_var, function(x){
+```
+
+```{r echo = FALSE}
+
+pyr_button
+
+```
+
+
+```{r}
+
+drc_pop <- rio::import("population_structure.xlsx") %>% 
+  select(c(3,5,7,9)) %>% 
+  mutate(across(everything(), ~as.numeric(str_remove_all(.x, ","))))
+
+drc_pyr <- drc_pop %>% 
+  rename(age = GROUP) %>% 
+  mutate(age_cat = factor(case_when(age <= 2 ~ "(0,2]", 
+                             age <=5 ~ "(2,5]",
+                             age <=15 ~ "(5,15]",
+                             age <=25 ~ "(15,25]",
+                             age <=35 ~ "(25,35]",
+                             age <=45 ~ "(35,45]",
+                             age <=55 ~ "(45,55]",
+                             age <=65 ~ "(55,65]",
+                             age > 65 ~ "(65,Inf]", 
+                             .default = "error"), 
+                          levels = sort(unique(data5_a$age_cat3)))) %>% 
+  filter(!is.na(age)) %>% 
+  group_by(age_cat) %>% 
+  summarise(m = sum(`Male Population`), 
+            f = sum(`Female Population`)) %>% 
+  ungroup() %>% 
+  pivot_longer(-1) %>% 
+  mutate(perc_tot_pop = 100*value/sum(.$value))
+
+age_pyr <- data5_a %>% 
+  filter(!is.na(sexe)) %>% 
+  group_by(age_cat3, sexe) %>% 
+  summarise(count = n()) %>% 
+  ungroup() %>% 
+  mutate(perc_tot_cases = 100*count/sum(.$count)) %>% 
+  left_join(select(drc_pyr, age_cat, name, perc_tot_pop), 
+            by = c("age_cat3" = "age_cat", 
+                   "sexe" = "name"))
+
+plot <- ggplot(age_pyr)+
+  geom_abline(slope = 1,
+              intercept = 0,
+              color="grey80")+
+  geom_point(aes(x = perc_tot_pop, y = perc_tot_cases, 
+                 color = sexe, text = age_cat3))+
+  scale_fill_manual(values = c("coral2", "cadetblue"))+
+  labs(x = "Pourcentage de la population", 
+       y = "Pourcentage des cas")+
+  theme(legend.position = "none", 
+        aspect.ratio=1)+
+  coord_fixed(xlim = c(0,15), 
+                  ylim = c(0,15))
+
+plotly::ggplotly(plot, 
+                 tooltip = "text")
+
+```
+
+
+```{r}
+
+mal <- filter(data_6, tdr1 == "positif" & cough_fever != "both")
+resp <- filter(data_6, cough_fever == "both" & tdr1 == "negatif")
+resp_mal <- filter(data_6, tdr1 == "positif" & cough_fever == "both")
+unk <- filter(data_6, tdr1 == "unknown")
+
+temp <- filter(data_6, cough_fever == "both" | tdr1 == "positif")
+other <- filter(data_6, !n %in% temp$n)
+
+
+prop_var <- list("age_cat3",
+                 "sexe")
+
+test <- map(list(data_6, 
+         mal, 
+         resp, 
+         resp_mal, 
+         unk,
+         other), 
+    function(z){map(prop_var, function(x){
            y <- sym(x)
-           a <- data5_a %>%
+           a <- z %>%
              group_by(decede_non, {{y}}) %>% 
              summarise(count = n()) %>% 
              pivot_wider(names_from = "decede_non", 
@@ -1947,19 +2101,156 @@ demo_prop_list <- map(prop_var, function(x){
              rename(category = 1)
 
          return(a)
-         }
+           }) %>% 
+        set_names(prop_var) %>% 
+        list_rbind(names_to = "element") %>% 
+        mutate(across(c(decede, non_decede), ~replace_na(.x, 0))) %>% 
+        mutate(total = rowSums(select(., decede, non_decede)),
+               cfr = round(100*decede/total, 1), 
+               element = case_when(element == "age_cat3" ~ "Age (annees)", 
+                             element == "sexe" ~ "Sexe", 
+                             .default = "error"), 
+               category = case_when(category == "m" ~ "Masculin", 
+                              category == "f" ~ "Feminin", 
+                              .default = category)) %>% 
+        select(Variable = element, 
+               Groupe = category, 
+               `Total (nombre)` = total, 
+               `Taux de mortalite (%)` = cfr)}
          ) %>% 
-  set_names(prop_var) %>% 
-  list_rbind(names_to = "element") %>% 
-  mutate(across(c(decede, non_decede), ~replace_na(.x, 0))) %>% 
-  mutate(total = rowSums(select(., decede, non_decede)), 
-         cfr = round(100*decede/total, 1))
-  
+  reduce(~left_join(.x, .y, by = c("Variable", "Groupe"))) %>% 
+  flextable::flextable() %>% 
+  flextable::set_header_labels(`Total (nombre).x` = "Total (nombre)",
+                               `Total (nombre).y` = "Total (nombre)", 
+                               `Total (nombre).x.x` = "Total (nombre)", 
+                               `Total (nombre).y.y` = "Total (nombre)", 
+                               `Total (nombre).x.x.x` = "Total (nombre)", 
+                               `Total (nombre).y.y.y` = "Total (nombre)", 
+                               `Taux de mortalite (%).x` =  "Taux de mortalite (%)",
+                               `Taux de mortalite (%).y` =  "Taux de mortalite (%)",
+                               `Taux de mortalite (%).x.x` =  "Taux de mortalite (%)",
+                               `Taux de mortalite (%).y.y` =  "Taux de mortalite (%)",
+                               `Taux de mortalite (%).x.x.x` =  "Taux de mortalite (%)",
+                               `Taux de mortalite (%).y.y.y` =  "Taux de mortalite (%)") %>% 
+  flextable::add_header_row(values = c("", "All data", "Malaria only", 
+                                       "Respiratory only", 
+                                       "Respiratory and Malaria", 
+                                       "TDR Unknown", 
+                                       "Other"), 
+                            colwidths = c(2, 2, 2, 2, 2, 2, 2)) %>% 
+  flextable::vline(j = c(4,6,8,10,12)) %>% 
+    flextable::autofit()
+
+test
+
 ```
 
 
+### Location
 
 ```{r}
+
+case_loc_a <- data5_a %>% 
+  group_by(decede_non, as, etablissement_recu) %>% 
+  summarise(nombre = n(), 
+            reported_cases = list(as.Date(date_de_consultation)),
+            first_case = map(reported_cases, ~ min(.x, na.rm = TRUE)), 
+            last_case = map(reported_cases, ~ max(.x, na.rm = TRUE)), 
+            cases_with_rdt_results = sum(!is.na(tdr1)), 
+            cases_with_pos_rdt = sum(tdr1 == "positif", na.rm = TRUE), 
+            no_rdt = sum(is.na(tdr1)), 
+            any_art = sum(any_artemisinins == TRUE)) %>% 
+  ungroup() %>% 
+  mutate(any_art = replace_na(any_art, 0), 
+         tpr = cases_with_pos_rdt/cases_with_rdt_results) %>% 
+  select(-reported_cases) %>% 
+  pivot_wider(names_from = decede_non, 
+              values_from = c(nombre, 
+                              first_case, last_case, 
+                              cases_with_rdt_results, 
+                              cases_with_pos_rdt,
+                              tpr,
+                              no_rdt, 
+                              any_art), 
+              names_glue = "{decede_non}_{.value}")
+  
+### needs updating below with new variables; as well as adding totals  
+
+case_loc <- case_loc_a %>% 
+  relocate(as, etablissement_recu, 
+           non_decede_nombre, non_decede_first_case, 
+           non_decede_last_case, 
+           decede_nombre, decede_first_case, decede_last_case) %>% 
+  mutate(across(contains("nombre"), ~replace_na(.x, 0)), 
+         cfr = round(100*decede_nombre/(decede_nombre+non_decede_nombre),1), 
+         as = str_to_title(str_replace_all(as, "\\.", " ")), 
+         etablissement_recu = str_to_title(str_replace_all(etablissement_recu,
+                                                           "_", " ")), 
+         etablissement_recu = str_replace_all(etablissement_recu, 
+                                              c("Cs" = "CS", 
+                                                "Ps" = "PS", 
+                                                "Hgr" = "HGR"))) %>% 
+  rowwise() %>% 
+  mutate(overall_last = max(as.Date(non_decede_last_case), as.Date(decede_last_case),
+                            na.rm = TRUE), 
+         overall_first = min(as.Date(non_decede_first_case), as.Date(decede_first_case),
+                            na.rm = TRUE)) %>% 
+  ungroup() %>% 
+  mutate(across(c(decede_nombre, non_decede_nombre),~replace_na(.x, 0)), 
+         cas_total = decede_nombre +non_decede_nombre, 
+         overall_first = as.Date (overall_first), 
+         overall_last = as.Date(overall_last)) %>% 
+  select(`Aire de Sante` = as, 
+         Etablissement = etablissement_recu, 
+         `Decede (nombre)` = decede_nombre, 
+         `Cas Total` = cas_total, 
+         `Taux de Mortalite (%)` = cfr, 
+         `Primier Cas` = overall_first, 
+         `Dernier Cas` = overall_last, 
+         `Dernier Dece` = decede_last_case
+         ) %>% 
+  arrange(-`Decede (nombre)`, -`Cas Total`) 
+
+case_loc %>% 
+  DT::datatable(filter = 'top')
+
+```
+
+
+```{r eval = FALSE}
+
+## Focus on deaths by time and cause
+
+mal <- filter(data_6, tdr1 == "positif" & cough_fever != "both")
+resp <- filter(data_6, cough_fever == "both" & tdr1 == "negatif")
+resp_mal <- filter(data_6, tdr1 == "positif" & cough_fever == "both")
+unk <- filter(data_6, tdr1 == "unknown")
+
+
+
+temp <- filter(data_6, cough_fever == "both" | tdr1 == "positif")
+other <- filter(data_6, !n %in% temp$n)
+
+
+all_deaths <- map(list(mal, resp, resp_mal, unk), 
+    ~.x %>% 
+      filter(decede_non == "decede") %>% 
+      group_by(year_week_factor) %>% 
+      summarise(count = n())
+) %>% 
+  set_names(c("malaria_only", "respiratory_only", 
+              "malaria_and_respiratory", "unknown")) %>% 
+  list_rbind(names_to = "presentation") %>% 
+  complete(year_week_factor, presentation, fill = list(count = 0))
+
+ggplot(all_deaths)+
+  geom_col(aes(x = year_week_factor, y = count, 
+               fill = presentation, group = presentation),
+           position = "dodge")
+
+```
+
+```{r eval = FALSE}
 
 
 sympt_specific_out <- function(x, db){
