@@ -2331,9 +2331,9 @@ test %>%
                                        "Other"), 
                             colwidths = c(2, 2, 2, 2, 2, 2, 2)) %>% 
   flextable::vline(j = c(4,6,8,10,12)) %>% 
-    flextable::autofit()
+  flextable::autofit()
 
-test
+
 
 ```
 
@@ -2411,8 +2411,33 @@ case_loc %>%
 
 ```{r eval=FALSE}
 
-hf_dhis2 %>% 
-case_loc
+dhis_mod <- hf_dhis2 %>% 
+  mutate(hf_dhis = str_remove_all(hf, c("kg|Centre de Santé|Poste de Santé|Hôpital Général de Référence|de Référence"))) %>% 
+  linelist::clean_data(protect = c(T,T,F)) %>% 
+  mutate(type_dhis = case_when(str_detect(hf, "Centre de Santé de Référence") ~ "csr", 
+                          str_detect(hf, "Centre de Santé") ~ "cs", 
+                          str_detect(hf, "Poste de Santé") ~ "ps", 
+                          str_detect(hf, "Hôpital Général de Référence") ~ "hgr", 
+                          .default = "error")
+         )
+
+hf_cases <- tibble(hf = unique(data_6$etablissement_recu)) %>% 
+  mutate(type_cases = word(hf, 1, sep = "_"), 
+         hf_cases = str_remove_all(hf, "cs_|ps_|hgr_"), 
+         hf_cases = case_when(hf_cases == "makitapanzi" ~ "panzi_makita", 
+                              hf_cases == "tshakala_panzi" ~ "tsakala_panzi",
+                              hf_cases == "kamba_ndambi" ~ "kambandambi", 
+                              hf_cases == "kamba_ndambi" ~ "kambandambi", 
+                              hf_cases == "kiala_nkamba" ~ "kiala_kamba", 
+                              .default = hf_cases)) %>% 
+  select(-hf)
+
+hf <- full_join(dhis_mod, hf_cases, by = c("hf_dhis" = "hf_cases"))
+
+hf_case_not_dhis <- filter(hf, is.na(type_dhis))
+
+hf_dhis_no_cases <- filter(hf, is.na(type_cases))
+
 ```
 
 
