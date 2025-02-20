@@ -1785,12 +1785,14 @@ data_6 <- data5_a %>%
          year_week_factor,
          cough_fever) 
 
-mal <- filter(data_6, tdr1 == "positif")
-resp <- filter(data_6, cough_fever == "both")
+mal <- filter(data_6, tdr1 == "positif" & cough_fever != "both")
+resp <- filter(data_6, cough_fever == "both" & tdr1 == "negatif")
 resp_mal <- filter(data_6, tdr1 == "positif" & cough_fever == "both")
+unk <- filter(data_6, tdr1 == "unknown")
 
 temp <- filter(data_6, cough_fever == "both" | tdr1 == "positif")
 other <- filter(data_6, !n %in% temp$n)
+
 
 mas <- filter(data_6, str_detect(tx1.y, "malnutrition"))
 
@@ -1798,6 +1800,7 @@ all_data <- list(data_6,
                  mal, 
                  resp, 
                  resp_mal, 
+                 unk,
                  other)
 
 all_weeks <- tibble(week = unique(data_6$year_week_factor))
@@ -1817,13 +1820,25 @@ all_epicurves <- map(all_data,
 temp <- all_epicurves[[2]]
 
 
-epicurves <- map2(all_epicurves, list("grey",
+epicurves <- pmap(list(all_epicurves, list("grey",
                                      "firebrick4", 
                                      "cadetblue4", 
-                                     "blueviolet", 
-                                     "wheat4"),
-                 function(x, y){
+                                     "blueviolet",
+                                     "darkslategrey",
+                                     "wheat4"),list("Tous les cas", 
+                                                    "Paludisme seulement", 
+                                                    "Maladie respiratoire uniquement", 
+                                                    "Paludisme et maladie respiratoire", 
+                                                    "Statut du paludisme inconnu",
+                                                    "Autres")),
+                 function(x, y,z){
                    max <- max(all_epicurves[[1]]$count, na.rm = TRUE)
+                   
+                   x_1 <- x %>% 
+                     mutate(deaths = cfr/100*count)
+                   
+                   cases <- sum(x$count)
+                   deaths <- round(sum(x_1$deaths),0)
                    
                    a <-ggplot(x)+
                    geom_col(aes(x = year_week_factor, y = count), 
@@ -1833,7 +1848,11 @@ epicurves <- map2(all_epicurves, list("grey",
                      scale_x_discrete(breaks = unique(data_6$year_week_factor), 
                                       labels = unique(data_6$year_week_factor))+
                      labs(x = element_blank(), 
-                          y = "Count")+
+                          y = "Count", 
+                          title = z, 
+                          subtitle = paste0("Nombre total de cas = ", cases,
+                                            "\nNombre de décès = ", deaths, 
+                                            " (", round(100*deaths/cases,1), "%)"))+
                      theme(axis.text.x = element_blank())
                     
                    
@@ -1841,14 +1860,16 @@ epicurves <- map2(all_epicurves, list("grey",
                      geom_col(aes(x = year_week_factor, y = cfr), 
                               fill = "grey35", 
                               color = "black")+
-                     labs(x = "Week", 
-                          y = "Case fatality\nrate (%)")+
+                     labs(x = "Semaine", 
+                          y = "Taux de mortalité (%)")+
                       theme(axis.text.x = element_text(angle = 45, vjust = 1,
                                                       hjust = 1))
                    
                    cowplot::plot_grid(a,
+                                      NULL,
                                       b,
-                                      ncol = 1, 
+                                      ncol = 1,
+                                      rel_heights = c(1,-0.3,1),
                                       align = "hv", 
                                       axis = "tblr")
                                       
@@ -1889,11 +1910,17 @@ epicurves[[4]]
 
 ```
 
+### Malaira status unknown
+```{r}
+epicurves[[5]]
+```
+
+
 ### Other (TDR negative/unknown + not _both_ fever and cough)
 
 ```{r}
 
-epicurves[[5]]
+epicurves[[6]]
 
 ```
 
@@ -1903,9 +1930,9 @@ of coding; these are not shown graphically
 
 
 
-## **Patient demographics**
+## **Patient demographics** {.tabset .tabset-pills}
 
-### Table
+### Tableau des Ages et des Sexes
 
 ```{r}
 
@@ -1947,7 +1974,9 @@ map(prop_var, function(x){
   
 ```
 
-### Age/Sex Pyramid
+### Graphiques des ages et des sexes
+
+#### Pyramide
 
 ```{r}
 
@@ -1996,12 +2025,14 @@ age_pyr <- map(list(data5_a, deces_5),
     theme_minimal()+
   coord_flip()+
     labs(y = "Count", 
-         x = "Age category")+
+         x = "Age category", 
+         fill = "Sexe")+
     scale_y_continuous(labels = function(x) abs(x))
     
 )
 
-pyr_button <- download_this(age_pyr[[1]])
+pyr_button <- download_this(age_pyr[[1]], 
+                                button_label = "Télécharger le graphique")
 
 age_pyr[[1]]
 
@@ -2013,8 +2044,12 @@ pyr_button
 
 ```
 
+#### Point de dispersion de la distribution des cas par rapport à la
+distribution de la population 
 
-```{r}
+Ce graphique est interactif.
+
+```{r out.width= 700, out.height = 700}
 
 drc_pop <- rio::import("population_structure.xlsx") %>% 
   select(c(3,5,7,9)) %>% 
@@ -2070,6 +2105,10 @@ plotly::ggplotly(plot,
 
 ```
 
+#### Répartition des cas de maladies individuelles par rapport à la 
+répartition de la population.
+
+##### Ages
 
 ```{r}
 
@@ -2080,6 +2119,30 @@ unk <- filter(data_6, tdr1 == "unknown")
 
 temp <- filter(data_6, cough_fever == "both" | tdr1 == "positif")
 other <- filter(data_6, !n %in% temp$n)
+
+pop_sexe_only <- drc_pyr %>% 
+  ungroup() %>% 
+  group_by(name) %>% 
+  summarise(pop = sum(value), 
+            perc = sum(perc_tot_pop)) %>% 
+  ungroup() %>% 
+  mutate(check = 100*pop/sum(.$pop)) %>%   # checks out
+  select(Groupe = name, perc) %>% 
+  mutate(Groupe = case_when(Groupe == "f" ~ "Feminin", 
+                          Groupe == "m" ~ "Masculin"), 
+         Variable = "Sexe")
+
+pop_sexe <- drc_pyr %>% 
+  ungroup() %>% 
+  group_by(age_cat) %>% 
+  summarise(pop = sum(value), 
+            perc = sum(perc_tot_pop)) %>% 
+  ungroup() %>% 
+  mutate(check = 100*pop/sum(.$pop)) %>%   # checks out
+  select(Groupe = age_cat, perc) %>% 
+  mutate(Variable = "Age (annees)") %>% 
+  bind_rows(pop_sexe_only)
+
 
 
 prop_var <- list("age_cat3",
@@ -2118,7 +2181,136 @@ test <- map(list(data_6,
                `Total (nombre)` = total, 
                `Taux de mortalite (%)` = cfr)}
          ) %>% 
-  reduce(~left_join(.x, .y, by = c("Variable", "Groupe"))) %>% 
+  reduce(~left_join(.x, .y, by = c("Variable", "Groupe")))
+
+
+prop_cases <- test %>% 
+  select(Variable, Groupe, starts_with("Total")) %>% 
+  ungroup() %>% 
+  group_by(Variable) %>% 
+  mutate(across(starts_with("Total"), function(x) paste0(x, "/",sum(x)), 
+                .names = "{col}_tot")) %>% 
+  ungroup() %>% 
+  select(where(is.character)) %>% 
+  mutate(across(starts_with("Total"), function(x) 100*as.numeric(word(x, 1, sep = "/"))/as.numeric(word(x, 2, sep = "/")))
+  ) %>% 
+  left_join(pop_sexe, by = c("Variable", "Groupe")) %>% 
+  rename(all = 3, 
+         mal_only = 4, 
+         resp_only = 5, 
+         resp_mal = 6, 
+         unk = 7, 
+         other = 8, 
+         pop = 9) %>% 
+  mutate(Groupe = factor(Groupe, levels = c(as.character(sort(unique(drc_pyr$age_cat))), 
+                                            "Feminin", "Masculin")))
+
+
+prop_cases_graph_a <- prop_cases %>% 
+  pivot_longer(-c(1,2)) %>% 
+  mutate(name = factor(case_match(name,
+                                  "pop" ~ "Population", 
+                                  "all" ~ "Tous les cas",
+                                  "mal_only" ~ "Paludisme", 
+                                  "resp_only" ~ "Respiratoire", 
+                                  "resp_mal" ~ "Paludisme et Respiratoire", 
+                                  "unk" ~ "Palu inconnu",
+                                  "other" ~ "Autres"),
+                       levels = c("Population", 
+                                  "Tous les cas",
+                                  "Paludisme", 
+                                  "Respiratoire",
+                                  "Paludisme et Respiratoire", 
+                                  "Palu inconnu",
+                                  "Autres"))) %>% 
+  split(.$Variable)
+
+prop_cases_graph <- prop_cases_graph_a %>% 
+  map2(list("Tranche d'âge", 
+            "Sexe"), 
+       ~.x %>% 
+        ggplot()+
+        geom_col(aes(x = Groupe, 
+                     y = value, 
+                     fill = name),
+                 color = "grey35",
+                 position = "dodge")+
+        scale_fill_manual(values = c("black", 
+                                     "grey",
+                                     "firebrick4", 
+                                     "cadetblue4", 
+                                     "blueviolet",
+                                     "darkslategrey",
+                                     "wheat4"))+
+        labs(y = "Pourcentage (%)", 
+             x = .y,
+             fill = "Maladie",
+             title = "Pourcentage de cas par rapport à estimations démographiques nationales")+
+         theme(legend.position = "none"))
+
+legend <- cowplot::get_legend(prop_cases_graph_a[[1]] %>% 
+        ggplot()+
+        geom_col(aes(x = Groupe, 
+                     y = value, 
+                     fill = name),
+                 color = "grey35",
+                 position = "dodge")+
+        scale_fill_manual(values = c("black", 
+                                     "grey",
+                                     "firebrick4", 
+                                     "cadetblue4", 
+                                     "blueviolet",
+                                     "darkslategrey",
+                                     "wheat4"))+
+          labs(fill = element_blank())
+)
+
+ggsave(cowplot::ggdraw(legend), 
+       filename = here::here("output", "pop_structure_legend.png"), 
+       dpi = 700, 
+       height = 3, 
+       width = 2, 
+       units = "in")
+
+  
+graph_1 <- cowplot::plot_grid(cowplot::ggdraw(legend),prop_cases_graph[[1]], 
+                   ncol = 2, rel_widths = c(0.3, 1))
+
+age_dist_dl <- downloadthis::download_this(graph_1, 
+                                    button_label = "Télécharger le graphique")
+
+graph_1
+```
+
+
+```{r echo = FALSE}
+
+age_dist_dl
+
+```
+
+```{r}
+
+graph_2 <- cowplot::plot_grid(cowplot::ggdraw(legend),prop_cases_graph[[2]], 
+                   ncol = 2, rel_widths = c(0.3, 1))
+
+sexe_dist_dl <- downloadthis::download_this(graph_2, 
+                                    button_label = "Télécharger le graphique")
+
+graph_2
+```
+
+```{r echo = FALSE}
+
+sexe_dist_dl
+
+```
+
+
+```{r}
+
+
+test %>% 
   flextable::flextable() %>% 
   flextable::set_header_labels(`Total (nombre).x` = "Total (nombre)",
                                `Total (nombre).y` = "Total (nombre)", 
@@ -2146,12 +2338,12 @@ test
 ```
 
 
-### Location
+### Location 
 
-```{r}
+```{r out.width= 700, out.height = 700}
 
 case_loc_a <- data5_a %>% 
-  group_by(decede_non, as, etablissement_recu) %>% 
+  group_by(decede_non, etablissement_recu) %>% 
   summarise(nombre = n(), 
             reported_cases = list(as.Date(date_de_consultation)),
             first_case = map(reported_cases, ~ min(.x, na.rm = TRUE)), 
@@ -2177,13 +2369,13 @@ case_loc_a <- data5_a %>%
 ### needs updating below with new variables; as well as adding totals  
 
 case_loc <- case_loc_a %>% 
-  relocate(as, etablissement_recu, 
+  relocate(etablissement_recu, 
            non_decede_nombre, non_decede_first_case, 
            non_decede_last_case, 
            decede_nombre, decede_first_case, decede_last_case) %>% 
   mutate(across(contains("nombre"), ~replace_na(.x, 0)), 
          cfr = round(100*decede_nombre/(decede_nombre+non_decede_nombre),1), 
-         as = str_to_title(str_replace_all(as, "\\.", " ")), 
+        # as = str_to_title(str_replace_all(as, "\\.", " ")), 
          etablissement_recu = str_to_title(str_replace_all(etablissement_recu,
                                                            "_", " ")), 
          etablissement_recu = str_replace_all(etablissement_recu, 
@@ -2200,8 +2392,7 @@ case_loc <- case_loc_a %>%
          cas_total = decede_nombre +non_decede_nombre, 
          overall_first = as.Date (overall_first), 
          overall_last = as.Date(overall_last)) %>% 
-  select(`Aire de Sante` = as, 
-         Etablissement = etablissement_recu, 
+  select(Etablissement = etablissement_recu, 
          `Decede (nombre)` = decede_nombre, 
          `Cas Total` = cas_total, 
          `Taux de Mortalite (%)` = cfr, 
@@ -2214,6 +2405,14 @@ case_loc <- case_loc_a %>%
 case_loc %>% 
   DT::datatable(filter = 'top')
 
+```
+
+
+
+```{r eval=FALSE}
+
+hf_dhis2 %>% 
+case_loc
 ```
 
 
