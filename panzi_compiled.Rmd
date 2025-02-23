@@ -462,6 +462,94 @@ comp_spell_dl
 
 ```
 
+### Processing location data
+```{r}
+village <- data2 %>% 
+  dplyr::distinct(as, village_quartier) %>% 
+  arrange(as, village_quartier) %>% 
+  split(.$as) %>% 
+  map(~.x %>% 
+        mutate(id = row_number()) %>% 
+        powerjoin::power_left_join(., ., 
+                           by = c(~ stringdist::stringdist(.x$village_quartier, 
+                                                                     .y$village_quartier) < 3),
+                           keep = "both"
+                           ) %>% 
+        janitor::get_dupes(id.x) %>% 
+        mutate(same = village_quartier.x == village_quartier.y) %>% 
+        filter(same == FALSE, 
+               id.x < id.y) %>% 
+        select(-c(same,as.y, as.x, dupe_count, id.x, id.y))
+      ) %>% 
+  list_rbind(names_to = "as")
+
+rio::export(village, "village_rename.xlsx")
+
+village_sp <- rio::import("village_rename_1.xlsx") %>% 
+  select(-change_name_of_x_to) %>% 
+  filter(!is.na(change_name_of_y_to)) %>% 
+  distinct(as, village_quartier.y, change_name_of_y_to)
+
+data5_b <- data5 %>% 
+  mutate(join_id = row_number()) %>% 
+  left_join(village_sp, by = c("as", "village_quartier" = "village_quartier.y"), 
+            keep = TRUE) %>% 
+  mutate(change_name_of_y_to = case_when(is.na(change_name_of_y_to) ~ village_quartier, 
+                                        .default = change_name_of_y_to))
+
+village_sp_out <- data5_b %>% 
+  group_by(change_name_of_y_to) %>% 
+  mutate(pseudonyms = list(village_quartier.y)) %>% 
+  unnest_longer(pseudonyms) %>% 
+  filter(!is.na(pseudonyms)) %>% 
+  distinct(as.x, change_name_of_y_to, pseudonyms) %>% 
+  select(`Aire de Sante` = as.x, 
+         Nom = change_name_of_y_to, 
+         `Autre noms` = pseudonyms)
+
+village_spell_dl <- village_sp_out %>% 
+ downloadthis::download_this(
+    output_name = "village_spell_changes",
+    output_extension = ".xlsx",
+    button_label = "Village Changes",
+    button_type = "default",
+    has_icon = TRUE,
+    icon = "fa-regular fa-arrow-down-to-line")
+
+data5_c <- data5_b %>% 
+  mutate(village_quartier = case_when(!is.na(change_name_of_y_to) ~ change_name_of_y_to,
+                                      .default = village_quartier)) 
+
+
+test <- data5_b %>% 
+  group_by(as.x) %>% 
+  summarise(n_vill_og = map(list(unique(village_quartier, na.rm = TRUE)), length))
+ 
+data5_c %>% 
+  group_by(as.x) %>% 
+  summarise(n_vill_fix = map(list(unique(village_quartier, na.rm = TRUE)), length)) %>% 
+  ungroup() %>% 
+  left_join(test, b = "as.x") %>% 
+  rename(`Aire de Sante` = as.x, 
+         `Nombre de villages` = n_vill_fix, 
+         `Nombre de villages\n(avant netoyage)` = n_vill_og) %>% 
+  mutate(`Aire de Sante` = str_to_sentence(str_replace_all(`Aire de Sante`, "\\.", 
+                                                           " ")), 
+         `Nombre de villages` = as.character(`Nombre de villages`), 
+         `Nombre de villages\n(avant netoyage)` = as.character(`Nombre de villages\n(avant netoyage)`)) %>% 
+  flextable::flextable() %>% 
+  flextable::autofit()
+
+```
+
+
+```{r echo = FALSE}
+
+village_spell_dl
+
+```
+
+
 
 ## **Presentation and outcomes** {.tabset .tabset-pills}
 Additional information on patient presentation is provided in subsequent 
@@ -1751,6 +1839,135 @@ symptom_combos_flex[[3]]
 
 ```
 
+### Matching lab data to line list
+```{r}
+
+
+## Merge in laboratory data
+
+normalize_string <- function(text) {
+  str_split(text, "_") %>% 
+    unlist() %>% 
+    sort() %>% 
+    paste(collapse = "_")
+}
+
+# Normalize the 'text' columns in both data frames
+linelist_normalized <- data5 %>%
+  mutate(normalized_name = map_chr(nom_et_postnom, normalize_string))
+
+lab_normalized <- lab %>%
+  mutate(normalized_text = map_chr(noms, normalize_string))
+
+data5_1 <- powerjoin::power_left_join(linelist_normalized, lab_normalized, 
+                           by = c(~ stringdist::stringdist(.x$normalized_name, 
+                                                                     .y$normalized_text) < 5,
+                                  ~ lubridate::time_length(interval(.x$date_de_notification, .y$date_de_prelevement),
+                                                           "day") > -3),
+                           keep = "both"
+                           )%>% 
+  ungroup() %>% 
+  mutate(lab_age_ans = as.numeric(age_ans), 
+         lab_age_mois = as.numeric(age_mois)/12, 
+         age_lab = ifelse(!is.na(lab_age_ans), lab_age_ans, lab_age_mois), 
+         meme_sex = sexe.x == sexe.y, 
+         age_difference = age_years - age_lab, 
+         jour_not_prelev = lubridate::time_length(interval(date_de_notification, date_de_prelevement),
+                                       "day"))
+
+
+temp <- data5_1 %>% 
+  filter(!is.na(id.y)) %>% 
+  mutate(name_dist = stringdist::stringdist(normalized_name, normalized_text)) %>% 
+  select(c(n, id.y, normalized_name, normalized_text, name_dist, date_de_notification, 
+           date_de_prelevement,jour_not_prelev, 
+           age_years, age_lab, age_difference, 
+           sexe.x, sexe.y, meme_sex))
+
+dupes4 <- data5_1 %>% 
+  janitor::get_dupes(n) %>% 
+  select(c(n, nom_et_postnom, age_years, sexe.x, date_de_notification,
+           id.y, noms, age_ans, age_mois, sexe.y, age_lab, date_de_prelevement)) %>% 
+  mutate(meme_sex = sexe.x == sexe.y, 
+         age_difference = age_years - age_lab, 
+         jour_not_prelev = lubridate::time_length(interval(date_de_notification, 
+                                                           date_de_prelevement),
+                                "day")) %>% 
+  group_by(n) %>% 
+  arrange(age_difference, meme_sex, .by_group = TRUE) %>% 
+  mutate(name_dist = stringdist::stringdist(nom_et_postnom, noms)) %>% 
+  relocate(n, id.y, nom_et_postnom, noms, name_dist, 
+           age_years, age_lab, age_difference, 
+           sexe.x, sexe.y, meme_sex) %>% 
+  mutate(remove = NA) # creates blank column to be filled in Excel
+
+temp1 <- temp %>% 
+  arrange(name_dist)
+
+rio::export(temp, "lab_linelist_match_dupes_a.xlsx")
+
+matches_a <- rio::import("lab_linelist_match_keep.xlsx")
+
+matches <- matches_a %>% 
+  filter(keep == 1)
+
+test <- janitor::get_dupes(matches, normalized_name) %>% 
+  distinct(normalized_name, .keep_all = TRUE)
+
+a <- length(setdiff(matches$normalized_name, test$normalized_name)) + length(test$normalized_name)
+
+
+lab_linelist_dl <- matches_a %>% 
+ downloadthis::download_this(
+    output_name = "diagnoses",
+    output_extension = ".xlsx",
+    button_label = "Diagnoses",
+    button_type = "default",
+    has_icon = TRUE,
+    icon = "fa-regular fa-arrow-down-to-line")
+
+
+```
+
+Of the `r nrow(lab)` entires, `r nrow(temp)` were matched to a restricted line
+list limited to individuals listed as 'notified' prior to the last date of 
+sampling in the lab list (`r max(lab$date_de_prelevement, na.rm = TRUE)`). 
+
+`r nrow(matches)` matches were found by fuzzy matching from `r a` unique 
+individuals. 
+
+```{r echo = FALSE}
+lab_linelist_dl
+```
+
+### Lab results
+
+```{r}
+
+lab1 <- lab %>% 
+  mutate(influenza = case_when(influenza == "type.a" ~ "type_a", 
+                               .default = influenza))
+
+lab2 <- lab1 %>% 
+  summarise(flu_prev = sum(influenza == "type_a", na.rm = TRUE)/(sum(influenza == "negatif", na.rm = TRUE)+
+                                                                   sum(influenza == "type_a", na.rm = TRUE)),
+            covid_prev = sum(sars_cov2 == "positif", na.rm = TRUE)/(sum(sars_cov2 == "negatif", na.rm = TRUE)+
+                                                                   sum(sars_cov2 == "positif", na.rm = TRUE)), 
+            mal_prev = sum(tdr_palu == "positif", na.rm = TRUE)/(sum(tdr_palu == "negatif", na.rm = TRUE)+
+                                                                   sum(tdr_palu == "positif", na.rm = TRUE))
+            )
+
+lab3 <- lab1 %>% 
+  mutate(coinfx = case_when(tdr_palu == "positif" & influenza == "type_a" ~ "mal_flu", 
+                            tdr_palu == "positif" & sars_cov2 == "positif" ~ "mal_covid",
+                            influenza == "type_a" & sars_cov2 == "positif" ~ "flu_covid", 
+                            .default = NA_character_
+                            )
+  ) %>% 
+  count(coinfx)
+
+
+```
 
 
 ## **Epidemiological curves** {.tabset .tabset-pills}
@@ -2432,9 +2649,22 @@ hf_cases <- tibble(hf = unique(data_6$etablissement_recu)) %>%
                               .default = hf_cases)) %>% 
   select(-hf)
 
-hf <- full_join(dhis_mod, hf_cases, by = c("hf_dhis" = "hf_cases"))
+hf <- full_join(dhis_mod, hf_cases, by = c("hf_dhis" = "hf_cases"), keep = TRUE)
 
 hf_case_not_dhis <- filter(hf, is.na(type_dhis))
+
+orphan_cases <- data5_a %>% 
+  rename(hf = etablissement_recu) %>% 
+  mutate(type_cases = word(hf, 1, sep = "_"), 
+         hf_cases = str_remove_all(hf, "cs_|ps_|hgr_"), 
+         hf_cases = case_when(hf_cases == "makitapanzi" ~ "panzi_makita", 
+                              hf_cases == "tshakala_panzi" ~ "tsakala_panzi",
+                              hf_cases == "kamba_ndambi" ~ "kambandambi", 
+                              hf_cases == "kamba_ndambi" ~ "kambandambi", 
+                              hf_cases == "kiala_nkamba" ~ "kiala_kamba", 
+                              .default = hf_cases)) %>% 
+  filter(hf_cases %in% hf_case_not_dhis$hf_cases)
+
 
 hf_dhis_no_cases <- filter(hf, is.na(type_cases))
 
