@@ -122,13 +122,22 @@ missing_obs <- map(b, ~nrow(.x)) %>%
   rename(`Observations Missing` = value) %>% 
   filter(Variable != "id")
 
+missing_dl <- missing_obs %>% 
+ downloadthis::download_this(
+    output_name = "missing_obs_number",
+    output_extension = ".xlsx",
+    button_label = "Missing Observations",
+    button_type = "default",
+    has_icon = TRUE,
+    icon = "fa-regular fa-arrow-down-to-line")
 
-rm(b)
-
-flextable::flextable(missing_obs) %>% 
-  flextable::autofit()
   
 ```
+
+```{r echo=FALSE}
+missing_dl
+```
+
 
 ### Spelling changes
 Basic formatting and spelling changes are coded here. Explore code to review 
@@ -383,7 +392,9 @@ data4 <- left_join(data3, treatment_list, by = "n") %>%
                                 "bactrim",
                                 "genta"),
                               function(x) str_detect(tx1, fixed(x)))),
-         any_abx = any(any_abx_a == TRUE), 
+         any_abx_b = any(any_abx_a == TRUE), 
+         any_abx = case_when(any_abx_b == TRUE ~ TRUE,
+                             .default = FALSE),
          complications = str_replace_all(complications, "broncho_pulmonaire", 
                                          "broncho.pulmonaire"))
 
@@ -559,6 +570,7 @@ data set meet the case definition.
 ### Counts of individual symptoms
 ```{r}
 
+data5 <- data5_c
 symptoms <- data5 %>% 
   select(n, 14:30) %>% 
   pivot_longer(-n) %>% 
@@ -1424,30 +1436,6 @@ dx_combo_upset <- dx %>%
     mutate(name = str_to_sentence(str_replace_all(name, "_", " "))) %>% 
     arrange(-count)
   
-#  symptom_combo_upset_a <- data5 %>% 
-#    select(n, cols) %>% 
-#    pivot_longer(-n) %>% 
-#    filter(value == "oui") %>% 
-#    mutate(name = str_to_sentence(str_replace_all(name, "_", " "))) %>% 
-#    group_by(n) %>% 
-#    summarise(list = list(name)) %>% 
-#    ungroup() %>% 
-#    group_by(list) %>% 
-#    mutate(count = n()) %>% 
-#    ungroup() %>% 
-#    arrange(-count) %>% 
-#    group_by(list) %>% 
-#    mutate(id = cur_group_id()) %>% 
-#    ungroup() %>% 
-#    mutate(list_sx_1 = factor(map_chr(list, paste, collapse = ", ")),
-#           list_sx_1 = fct_reorder(list_sx_1, -count)) %>% 
-#    group_by(list) 
-#  
-#    
-#  symptom_combo_upset <- symptom_combo_upset_a %>% 
-#    filter(id <= 20)
-#  
-
 heatmap <- data5 %>% 
   select(n, cols2) %>% 
   pivot_longer(-n) %>% 
@@ -1859,7 +1847,7 @@ linelist_normalized <- data5 %>%
 lab_normalized <- lab %>%
   mutate(normalized_text = map_chr(noms, normalize_string))
 
-data5_1 <- powerjoin::power_left_join(linelist_normalized, lab_normalized, 
+data5_d <- powerjoin::power_left_join(linelist_normalized, lab_normalized, 
                            by = c(~ stringdist::stringdist(.x$normalized_name, 
                                                                      .y$normalized_text) < 5,
                                   ~ lubridate::time_length(interval(.x$date_de_notification, .y$date_de_prelevement),
@@ -1876,7 +1864,7 @@ data5_1 <- powerjoin::power_left_join(linelist_normalized, lab_normalized,
                                        "day"))
 
 
-temp <- data5_1 %>% 
+temp <- data5_d %>% 
   filter(!is.na(id.y)) %>% 
   mutate(name_dist = stringdist::stringdist(normalized_name, normalized_text)) %>% 
   select(c(n, id.y, normalized_name, normalized_text, name_dist, date_de_notification, 
@@ -1884,7 +1872,7 @@ temp <- data5_1 %>%
            age_years, age_lab, age_difference, 
            sexe.x, sexe.y, meme_sex))
 
-dupes4 <- data5_1 %>% 
+dupes4 <- data5_d %>% 
   janitor::get_dupes(n) %>% 
   select(c(n, nom_et_postnom, age_years, sexe.x, date_de_notification,
            id.y, noms, age_ans, age_mois, sexe.y, age_lab, date_de_prelevement)) %>% 
@@ -1942,6 +1930,7 @@ lab_linelist_dl
 
 ### Lab results
 
+
 ```{r}
 
 lab1 <- lab %>% 
@@ -1949,35 +1938,67 @@ lab1 <- lab %>%
                                .default = influenza))
 
 lab2 <- lab1 %>% 
-  summarise(flu_prev = sum(influenza == "type_a", na.rm = TRUE)/(sum(influenza == "negatif", na.rm = TRUE)+
-                                                                   sum(influenza == "type_a", na.rm = TRUE)),
-            covid_prev = sum(sars_cov2 == "positif", na.rm = TRUE)/(sum(sars_cov2 == "negatif", na.rm = TRUE)+
-                                                                   sum(sars_cov2 == "positif", na.rm = TRUE)), 
-            mal_prev = sum(tdr_palu == "positif", na.rm = TRUE)/(sum(tdr_palu == "negatif", na.rm = TRUE)+
-                                                                   sum(tdr_palu == "positif", na.rm = TRUE))
-            )
+  summarise(flu_count = sum(influenza == "type_a", na.rm = TRUE), 
+            flu_prev = round(100*flu_count/(sum(influenza == "negatif", na.rm = TRUE)+
+                                                                   sum(influenza == "type_a", na.rm = TRUE)),1),
+            covid_count = sum(sars_cov2 == "positif", na.rm = TRUE),
+            covid_prev = round(100*covid_count/(sum(sars_cov2 == "negatif", na.rm = TRUE)+
+                                                                   sum(sars_cov2 == "positif", na.rm = TRUE)),1), 
+            covid_flu_count = sum(sars_cov2 == "positif" & influenza == "type_a", na.rm = TRUE),
+            covid_flu_prev = round(100*covid_flu_count/sum(!is.na(sars_cov2)& !is.na(influenza)), 1),
+            mal_count = sum(tdr_palu == "positif", na.rm = TRUE),
+            mal_flu_count = sum(tdr_palu == "positif" & influenza == "type_a", na.rm = TRUE),
+            mal_prev = round(100*mal_count/(sum(tdr_palu == "negatif", na.rm = TRUE)+
+                                                                   sum(tdr_palu == "positif", na.rm = TRUE)), 1),
+            mal_flu_prev = round(100*mal_flu_count/sum(!is.na(tdr_palu)& !is.na(influenza)), 1),
+            all_neg_count = sum(influenza == "negatif" & 
+                          sars_cov2 == "negatif" &
+                          tdr_palu == "negatif", na.rm = TRUE),
+            all_neg_prev = round(100*all_neg_count/sum(!is.na(influenza) & !is.na(sars_cov2) & !is.na(tdr_palu)), 1)
+            ) %>% 
+  pivot_longer(everything()) %>% 
+  mutate(type = word(name, -1, sep = "_"), 
+         name = str_remove_all(name, c("_count|_prev"))) %>% 
+  pivot_wider(names_from = "type", values_from = "value") %>% 
+  mutate(name = case_match(name,
+                    "flu" ~ "Grippe", 
+                    "covid" ~ "COVID", 
+                    "covid_flu" ~ "Grippe et COVID",
+                    "mal" ~ "Paludisme", 
+                    "mal_flu" ~ "Grippe et Palu", 
+                    "all_neg" ~ "Tous négatifs")) %>% 
+  rename(Maladie = name, 
+         Nombre = count, 
+         `Prevalance (%)` = prev) %>% 
+  flextable::flextable() %>% 
+  flextable::autofit()
 
-lab3 <- lab1 %>% 
-  mutate(coinfx = case_when(tdr_palu == "positif" & influenza == "type_a" ~ "mal_flu", 
-                            tdr_palu == "positif" & sars_cov2 == "positif" ~ "mal_covid",
-                            influenza == "type_a" & sars_cov2 == "positif" ~ "flu_covid", 
-                            .default = NA_character_
-                            )
-  ) %>% 
-  count(coinfx)
+
+lab2
 
 
 ```
 
 
+Notez que le dénominateur de la prévalence pour toutes les catégories n'est pas 
+120 en raison de certaines données manquantes.
+
+En raison de l'impossibilité de faire correspondre les observations de 
+laboratoire avec la liste épidémiologique et de la taille relativement réduite 
+de l'échantillon, il n'est pas certain que ces résultats reflètent l'ensemble 
+de la population concernée.
+
 ## **Epidemiological curves** {.tabset .tabset-pills}
 
 ```{r}
+
 data_6 <- data5_a %>% 
   select(n,
          date_de_notification,
          date_debut_des_signes,
          date_de_consultation,
+         as = as.x,
+         village_quartier,
          etablissement_recu, 
          fievre, 
          toux,
@@ -2000,7 +2021,11 @@ data_6 <- data5_a %>%
          duration_symp_consult,  
          consult_pre_dec01,
          year_week_factor,
-         cough_fever) 
+         cough_fever) %>% 
+  mutate(etablissement_recu = case_match(etablissement_recu, 
+                                         "communaute" ~ "none", 
+                                         NA ~ "none",
+                                         .default = etablissement_recu))
 
 mal <- filter(data_6, tdr1 == "positif" & cough_fever != "both")
 resp <- filter(data_6, cough_fever == "both" & tdr1 == "negatif")
@@ -2204,7 +2229,7 @@ deces_5 <- data5_a %>%
 prop_var <- list("age_cat1",
                  "age_cat2", 
                  "sexe", 
-                 "as",
+                 "as.x",
                  "fievre",
                  "toux", 
                  "cough_fever",
@@ -2524,38 +2549,192 @@ sexe_dist_dl
 ```
 
 
+
+### Location 
+
+#### Cases by village
+```{r}
+#unique(data_6$decede_non)
+
+hist <- data_6 %>% 
+  group_by(village_quartier) %>% 
+  summarise(count = n(), 
+            deaths = sum(decede_non == "decede", na.rm = TRUE)) %>% 
+  ungroup() %>% 
+  arrange(-count, -deaths) %>% 
+  ungroup() %>% 
+  mutate(cfr = deaths/count)
+
+cases_par_village <- ggplot(hist)+
+  geom_histogram(aes(x=count), 
+                 color = "black")+
+  labs(x = "Nombre de cas", 
+       y = "Nombre de villages")
+
+max_town <- hist %>% 
+  slice_max(count) %>% 
+  pull(village_quartier) %>% 
+  str_replace_all(., "_", " ") %>% 
+  str_to_title()
+
+under_10 <- nrow(filter(hist, count <10))
+under_1 <- nrow(filter(hist, count ==1))
+
+
+cases_village_dl <- downloadthis::download_this(cases_par_village, 
+                                    button_label = "Télécharger le graphique")
+
+cases_par_village  
+```
+
+```{r echo = FALSE}
+cases_village_dl
+```
+
+
+Des cas ont été signalés dans `r nrow(hist)` villages. Le nombre maximal de cas
+(`r max(hist$count, na.rm = TRUE)`) a été signalé par `r max_town`. Les villages
+`r under_10` ont signalé moins de 10 cas, et `r under_1` villages n'ont 
+signalé qu'un seul cas chacun.
+
+
+#### Cases by village over time
+
 ```{r}
 
+village_as <- data_6 %>% 
+  group_by(as, village_quartier) %>% 
+  summarise(count = n()) %>% 
+  ungroup() %>% 
+  janitor::get_dupes(village_quartier)
 
-test %>% 
-  flextable::flextable() %>% 
-  flextable::set_header_labels(`Total (nombre).x` = "Total (nombre)",
-                               `Total (nombre).y` = "Total (nombre)", 
-                               `Total (nombre).x.x` = "Total (nombre)", 
-                               `Total (nombre).y.y` = "Total (nombre)", 
-                               `Total (nombre).x.x.x` = "Total (nombre)", 
-                               `Total (nombre).y.y.y` = "Total (nombre)", 
-                               `Taux de mortalite (%).x` =  "Taux de mortalite (%)",
-                               `Taux de mortalite (%).y` =  "Taux de mortalite (%)",
-                               `Taux de mortalite (%).x.x` =  "Taux de mortalite (%)",
-                               `Taux de mortalite (%).y.y` =  "Taux de mortalite (%)",
-                               `Taux de mortalite (%).x.x.x` =  "Taux de mortalite (%)",
-                               `Taux de mortalite (%).y.y.y` =  "Taux de mortalite (%)") %>% 
-  flextable::add_header_row(values = c("", "All data", "Malaria only", 
-                                       "Respiratory only", 
-                                       "Respiratory and Malaria", 
-                                       "TDR Unknown", 
-                                       "Other"), 
-                            colwidths = c(2, 2, 2, 2, 2, 2, 2)) %>% 
-  flextable::vline(j = c(4,6,8,10,12)) %>% 
-  flextable::autofit()
+village_multi_as <- sum(village_as$count)
+
+village_as <- data_6 %>% 
+  group_by(as, village_quartier) %>% 
+  summarise(count = n()) %>% 
+  ungroup() %>% 
+  group_by(village_quartier) %>% 
+  slice_max(count, n = 1, with_ties = FALSE) %>% 
+  ungroup() %>% 
+  select(-count)
+
+heatmap_village_a <- data_6 %>% 
+  group_by(as, village_quartier, year_week_factor) %>% 
+  summarise(count = n()) %>% 
+  ungroup() %>% 
+  complete(village_quartier, year_week_factor, fill = list(count = 0)) %>% 
+  left_join(village_as, by = "village_quartier")
+
+heatmap_village_b <- heatmap_village_a %>% 
+  group_by(as.y) %>% 
+  summarise(vill = list(village_quartier)) %>% 
+  unnest_longer(vill) %>% 
+  distinct(vill, .keep_all = TRUE)
+
+vill_order <- heatmap_village_b$vill
 
 
+heatmap_village <- heatmap_village_a %>% 
+  mutate(village_loc = factor(village_quartier, 
+                              levels = vill_order)) %>% 
+ggplot()+
+  geom_tile(aes(x = year_week_factor, y = village_loc, fill = count), 
+            breaks = c(0))+
+  scale_fill_viridis_c(option = "B")+
+  labs(x = "Semaine", 
+       y = element_blank(), 
+       fill = "Nombre")+
+  theme(axis.text.y = element_blank(), 
+        axis.text.x = element_text(angle = 90), vjust = 1, 
+        hjust = 1)
+
+heatmap_village
+#plotly::ggplotly(heatmap_village)
+
+```
+#### Cases by health facility
+
+##### Issues
+
+```{r }
+
+dhis_mod <- hf_dhis2 %>% 
+  mutate(hf_dhis = str_remove_all(hf, c("kg|Centre de Santé|Poste de Santé|Hôpital Général de Référence|de Référence"))) %>% 
+  linelist::clean_data(protect = c(T,T,F)) %>% 
+  mutate(type_dhis = case_when(str_detect(hf, "Centre de Santé de Référence") ~ "csr", 
+                          str_detect(hf, "Centre de Santé") ~ "cs", 
+                          str_detect(hf, "Poste de Santé") ~ "ps", 
+                          str_detect(hf, "Hôpital Général de Référence") ~ "hgr", 
+                          .default = "error")
+         )
+
+hf_cases <- tibble(hf = unique(data_6$etablissement_recu)) %>% 
+  mutate(type_cases = word(hf, 1, sep = "_"), 
+         hf_cases = str_remove_all(hf, "cs_|ps_|hgr_"), 
+         hf_cases = case_when(hf_cases == "makitapanzi" ~ "panzi_makita", 
+                              hf_cases == "tshakala_panzi" ~ "tsakala_panzi",
+                              hf_cases == "kamba_ndambi" ~ "kambandambi", 
+                              hf_cases == "kamba_ndambi" ~ "kambandambi", 
+                              hf_cases == "kiala_nkamba" ~ "kiala_kamba", 
+                              .default = hf_cases)) %>% 
+  select(-hf)
+
+hf <- full_join(dhis_mod, hf_cases, by = c("hf_dhis" = "hf_cases"), keep = TRUE)
+
+hf_case_not_dhis <- filter(hf, is.na(type_dhis)) %>% 
+  filter(!is.na(type_cases) & type_cases != "communaute") %>% 
+  mutate(type_cases = str_to_upper(type_cases), 
+         hf_cases = str_to_title(hf_cases),
+         hf = paste0(type_cases, " ", hf_cases))
+
+orphan_cases <- data5_a %>% 
+  rename(hf = etablissement_recu) %>% 
+  mutate(type_cases = word(hf, 1, sep = "_"), 
+         hf_cases = str_remove_all(hf, "cs_|ps_|hgr_"), 
+         hf_cases = case_when(hf_cases == "makitapanzi" ~ "panzi_makita", 
+                              hf_cases == "tshakala_panzi" ~ "tsakala_panzi",
+                              hf_cases == "kamba_ndambi" ~ "kambandambi", 
+                              hf_cases == "kamba_ndambi" ~ "kambandambi", 
+                              hf_cases == "kiala_nkamba" ~ "kiala_kamba", 
+                              .default = hf_cases)) %>% 
+  filter(hf_cases %in% hf_case_not_dhis$hf_cases)
+
+
+hf_dhis_no_cases <- filter(hf, is.na(type_cases)) %>% 
+  filter(!is.na(hf_dhis)) %>% 
+  mutate(type_dhis = str_to_upper(type_dhis), 
+         hf_dhis = str_to_title(str_replace_all(hf_dhis, "_", " ")),
+         hf = paste0(type_dhis, " ", hf_dhis))
+
+temp <- hf_case_not_dhis$hf %>% 
+  as.data.frame() %>% 
+  flextable::flextable()
+
+temp1 <- hf_dhis_no_cases$hf %>% 
+  as.data.frame() %>% 
+  flextable::flextable()
+```
+There are `r length(hf_case_not_dhis$hf)` health facilities listed in the epidemiological line list that are not in the list of health facilities located 
+in the Panzi Health Zone per DHIS2. They are listed below. 
+
+```{r echo = FALSE}
+
+temp
 
 ```
 
 
-### Location 
+There are `r length(hf_dhis_no_cases$hf)` health facilities listed in the Panzi
+Health Zone per DHIS2 that do not have any cases listed in the line list. They
+are listed below. 
+
+```{r echo = FALSE}
+
+temp1
+
+```
+
 
 ```{r out.width= 700, out.height = 700}
 
@@ -2623,6 +2802,241 @@ case_loc %>%
   DT::datatable(filter = 'top')
 
 ```
+
+## **Deaths** {.tabset .tabset-pills}
+
+```{r}
+
+prop_var <- list("age_cat3",
+                 "sexe", 
+                 "etablissement_recu", 
+                 "any_antimalarial",
+                 "any_abx")
+
+death_explore <- map(list(data_6, 
+         mal, 
+         resp, 
+         resp_mal, 
+         unk,
+         other), 
+    function(z){map(prop_var, function(x){
+           y <- sym(x)
+           a <- z %>%
+             group_by(decede_non, {{y}}) %>% 
+             summarise(count = n()) %>% 
+             pivot_wider(names_from = "decede_non", 
+                         values_from = "count") %>% 
+             rename(category = 1) %>% 
+             mutate(across(where(is.logical), ~as.character(.x)))
+
+         return(a)
+           }) %>% 
+        set_names(prop_var) %>% 
+        list_rbind(names_to = "element") %>% 
+        mutate(across(c(decede, non_decede), ~replace_na(.x, 0))) %>% 
+        mutate(total = rowSums(select(., decede, non_decede)),
+               cfr = round(100*decede/total, 1), 
+               element = case_when(element == "age_cat3" ~ "Age (annees)", 
+                             element == "sexe" ~ "Sexe",
+                             element == "etablissement_recu" ~ "Formation Sanitaire",
+                             .default = element), 
+               category = case_when(category == "m" ~ "Masculin", 
+                              category == "f" ~ "Feminin", 
+                              .default = category)) %>% 
+        select(Variable = element, 
+               Groupe = category, 
+               `Total (nombre)` = total, 
+               `Taux de mortalite (%)` = cfr)}
+         ) %>% 
+  reduce(~left_join(.x, .y, by = c("Variable", "Groupe")))
+
+
+
+death_explore_chart_a <- death_explore %>% 
+  select(Variable, Groupe, starts_with("Taux")) %>% 
+  ungroup() %>% 
+  mutate(across(c(3:8), ~replace_na(.x, 0)), 
+         Groupe = str_to_title(str_replace_all(Groupe, "_", " ")), 
+         Groupe = str_replace_all(Groupe, c("Cs" = "CS", 
+                                            "Ps" = "PS"))) %>% 
+  rename(`Tous les cas` = 3, 
+         `Paludisme uniquement` = 4, 
+         `Maladie respiratoire` = 5, 
+         `Palu ET respiratoire` = 6, 
+         `Statut palu inconnu` = 7, 
+         `Autres` = 8)
+  
+death_explore_chart <- death_explore_chart_a %>% 
+  flextable::flextable() %>% 
+  flextable::add_header_row(values = c("", "Taux de Mortalite (%)"),
+                            colwidths = c(2, 6)) %>% 
+  flextable::autofit()
+
+death_explore_chart
+
+```
+
+
+```{r}
+
+hf_with_deaths <- death_explore_chart_a %>% 
+  filter(Variable == "Formation Sanitaire" & `Tous les cas` > 0 ) %>% 
+  mutate(Groupe = str_to_lower(str_replace_all(Groupe, " ", "_")))
+
+hf_with_deaths_full <- map(list(data_6, 
+         mal, 
+         resp, 
+         resp_mal, 
+         unk,
+         other),~.x %>% 
+           filter(decede_non == "decede") %>% 
+           mutate(etablissement_recu = str_to_title(str_replace_all(etablissement_recu, "_", " ")), 
+                  etablissement_recu = str_replace_all(etablissement_recu, c("Cs" = "CS", "Ps" = "PS"))) %>% 
+           group_by(year_week_factor, etablissement_recu) %>% 
+           summarise(count = n()) %>% 
+           ungroup() %>% 
+           complete(year_week_factor, etablissement_recu, fill = list(count = 0)) %>% 
+           split(.$etablissement_recu) %>% 
+           compact() %>% 
+           map2(names(.), ~ggplot(.x)+
+                  geom_col(aes(x = year_week_factor, y = count))+
+                  labs(title = .y,
+                       x = element_blank(), 
+                       y = "Nombre Deces")+
+                  theme(axis.text.x = element_blank())
+                ))
+
+combo_plot <- map(hf_with_deaths_full, ~cowplot::plot_grid(plotlist = .x, 
+                                                           ncol = 1))
+
+combo_plot[[1]]
+```
+```{r}
+
+qui_decede_week <- map(list(data_6, 
+         mal, 
+         resp, 
+         resp_mal, 
+         unk,
+         other),~.x %>% 
+           split(.$decede_non) %>% 
+           map(~.x %>% 
+           mutate(etablissement_recu = str_to_title(str_replace_all(etablissement_recu, "_", " ")), 
+                  etablissement_recu = str_replace_all(etablissement_recu, c("Cs" = "CS", "Ps" = "PS"))) %>% 
+           group_by(year_week_factor) %>% 
+           summarise(med_age = median(age_years, na.rm = TRUE), 
+                     med_duration = median(duration_symp_consult, na.rm = TRUE), 
+                     prop_antimal = round(100*sum(any_antimalarial == "TRUE", na.rm = TRUE)/
+                       sum(!is.na(any_antimalarial)),1),
+                     prop_abx = round(100*sum(any_abx == "TRUE", na.rm = TRUE)/
+                       sum(!is.na(any_abx)),1)
+                     )) %>% 
+           reduce(~left_join(.x, .y, "year_week_factor")
+                  )
+) %>% 
+  set_names("Tous Cas", "Palu seulement", 
+            "Respiratoire Seulement", "Palu + Resp", 
+            "Statut Palu inconnu", "Autres") %>% 
+  list_rbind(names_to = "Diagnostiques") %>% 
+  flextable::flextable() %>% 
+  flextable::set_header_labels(year_week_factor = "Semaine", 
+                               med_age.x = "Age médian\n(ans)",
+                               med_duration.x = "Durée avant soins\n(jours)", 
+                               prop_antimal.x = "Reçu antipaludéens\n(%)", 
+                               prop_abx.x = "Reçu des antibiotiques\n", 
+                               med_age.y = "Age médian\n(ans)",
+                               med_duration.y = "Durée avant soins\n(jours)", 
+                               prop_antimal.y = "Reçu antipaludéens\n(%)", 
+                               prop_abx.y = "Reçu des antibiotiques\n") %>% 
+  flextable::add_header_row(values = c("", "Décédés", "Non décédés"), 
+                            colwidths = c(2,4,4)) %>% 
+  flextable::vline(j = c(2,6))
+
+qui_decede_week                               
+                               
+```
+
+```{r}
+
+qui_decede_hf <- map(list(data_6, 
+         mal, 
+         resp, 
+         resp_mal, 
+         unk,
+         other),~.x %>% 
+           split(.$decede_non) %>% 
+           map(~.x %>% 
+           mutate(etablissement_recu = str_to_title(str_replace_all(etablissement_recu, "_", " ")), 
+                  etablissement_recu = str_replace_all(etablissement_recu, c("Cs" = "CS", "Ps" = "PS"))) %>% 
+           group_by(etablissement_recu) %>% 
+           summarise(med_age = round(median(age_years, na.rm = TRUE),1), 
+                     med_duration = median(duration_symp_consult, na.rm = TRUE), 
+                     prop_antimal = round(100*sum(any_antimalarial == "TRUE", na.rm = TRUE)/
+                       sum(!is.na(any_antimalarial)),1),
+                     prop_abx = round(100*sum(any_abx == "TRUE", na.rm = TRUE)/
+                       sum(!is.na(any_abx)),1)
+                     )) %>% 
+           reduce(~left_join(.x, .y, "etablissement_recu")
+                  )
+) %>% 
+  set_names("Tous Cas", "Palu seulement", 
+            "Respiratoire Seulement", "Palu + Resp", 
+            "Statut Palu inconnu", "Autres") %>% 
+  list_rbind(names_to = "Diagnostiques") %>% 
+  flextable::flextable() %>% 
+  flextable::set_header_labels(etablissement_recu = "Formation Sanitaire", 
+                               med_age.x = "Age médian\n(ans)",
+                               med_duration.x = "Durée avant soins\n(jours)", 
+                               prop_antimal.x = "Reçu antipaludéens\n(%)", 
+                               prop_abx.x = "Reçu des antibiotiques\n", 
+                               med_age.y = "Age médian\n(ans)",
+                               med_duration.y = "Durée avant soins\n(jours)", 
+                               prop_antimal.y = "Reçu antipaludéens\n(%)", 
+                               prop_abx.y = "Reçu des antibiotiques\n") %>% 
+  flextable::add_header_row(values = c("", "Décédés", "Non décédés"), 
+                            colwidths = c(2,4,4)) %>% 
+  flextable::vline(j = c(2,6))
+
+qui_decede_hf
+
+```
+
+
+
+### By diagnosis and age
+
+```{r}
+
+
+
+test %>% 
+  flextable::flextable() %>% 
+  flextable::set_header_labels(`Total (nombre).x` = "Total (nombre)",
+                               `Total (nombre).y` = "Total (nombre)", 
+                               `Total (nombre).x.x` = "Total (nombre)", 
+                               `Total (nombre).y.y` = "Total (nombre)", 
+                               `Total (nombre).x.x.x` = "Total (nombre)", 
+                               `Total (nombre).y.y.y` = "Total (nombre)", 
+                               `Taux de mortalite (%).x` =  "Taux de mortalite (%)",
+                               `Taux de mortalite (%).y` =  "Taux de mortalite (%)",
+                               `Taux de mortalite (%).x.x` =  "Taux de mortalite (%)",
+                               `Taux de mortalite (%).y.y` =  "Taux de mortalite (%)",
+                               `Taux de mortalite (%).x.x.x` =  "Taux de mortalite (%)",
+                               `Taux de mortalite (%).y.y.y` =  "Taux de mortalite (%)") %>% 
+  flextable::add_header_row(values = c("", "All data", "Malaria only", 
+                                       "Respiratory only", 
+                                       "Respiratory and Malaria", 
+                                       "TDR Unknown", 
+                                       "Other"), 
+                            colwidths = c(2, 2, 2, 2, 2, 2, 2)) %>% 
+  flextable::vline(j = c(4,6,8,10,12)) %>% 
+  flextable::autofit()
+
+
+
+```
+
+
 
 
 
