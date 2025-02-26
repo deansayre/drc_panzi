@@ -35,6 +35,7 @@ pacman::p_load(rio,
                here,
                tmap,
                sf,
+               leaflet,
                viridisLite,
                stringdist,
                tidyverse)
@@ -49,17 +50,27 @@ library(powerjoin)
 
 
 pf_inc22 <- raster(here("202406_Global_Pf_Incidence_Rate_COD_2022.tiff"))
+pop_dens <- raster(here("cod_general_2020.tif"))
 
 drc_sf <- getShp(ISO = "COD") %>% 
   st_as_sf()
 
 geo_codes_dhis2 <- rio::import("C:/Users/omp2/OneDrive - CDC/mgd/drc/geoFeatures_2025-01-19.rds")
 
+drc_prov <- geo_codes_dhis2 %>% 
+  sf::st_drop_geometry() %>% 
+  filter(levelName == "Province (DPS)") %>% 
+  mutate(name = str_remove_all(name, " Province"), 
+         name = str_remove(name, paste0(word(name, 1, sep = " "), " "))) %>% 
+  left_join(rio::import("drc_prev_provence.xlsx"), by = c("name" = "prov")) %>% 
+  mutate(prev = as.numeric(str_replace_all(prev, ",", "."))) %>% 
+  sf::st_as_sf()
 
 zds <- geo_codes_dhis2 %>% 
   sf::st_drop_geometry() %>% 
   filter(levelName == "Zone de Sante" & str_detect(name, "Panzi")) %>% 
   sf::st_as_sf()
+
 
 diff <- st_difference(drc_sf, zds) 
 
@@ -80,13 +91,52 @@ fs <- geo_codes_dhis2 %>%
   sf::st_as_sf()
 
 
-tmap_mode("view")
-tm_shape(pf_inc22)+
-tm_raster()+
-    tm_shape(diff)+
-  tm_fill("azure3", alpha = 0.5)+
-  tm_shape(zds)+
-  tm_borders()
+
+pal1 <- colorFactor(c(ochRe::ochre_palettes[["nolan_ned"]][[4]], 
+                      ochRe::ochre_palettes[["nolan_ned"]][[5]]), domain = c(1, 2))
+
+
+
+at <- c(0, seq(0.2,0.6,0.05), 1)
+cb <- colorBin(palette = "inferno", bins = at, domain = at, 
+               na.color = NA)
+
+ bins <- seq(0, 100, 10)
+ pal <- colorBin("YlOrRd", domain = drc_prov$prev, bins = bins)
+
+
+
+leaflet::leaflet() %>%
+  addProviderTiles(providers$Esri.WorldGrayCanvas) %>% 
+  addMapPane("base", zIndex = 410) %>% 
+  addMapPane("top", zIndex = 420) %>% 
+  addRasterImage(pf_inc22, colors = cb, 
+                 opacity = 0.8,
+              group = "MAP Incidence 2022") %>% 
+  addPolygons(
+    data = drc_prov, 
+    stroke = TRUE,
+    fillColor = ~pal(prev), fillOpacity = 1, smoothFactor = 0.5,
+    color = "black", opacity = 1, weight = 0.5, 
+    options = pathOptions(pane = "base"),
+    group = "Prevalance (RDT) DHS 2023") %>% 
+#  addRasterImage(pop_dens, colors = cb,
+#              group = "Population density") %>% 
+  addPolygons(
+    data = diff, 
+    stroke = TRUE, fillColor = "azure4", fillOpacity = 0.8, smoothFactor = 0.5,
+    color = "black", opacity = 1, weight = 0.8, 
+    options = pathOptions(pane = "top"),
+    group = "Panzi Health Zone") %>% 
+  addPolygons(
+    data = drc_sf, 
+    stroke = TRUE, fillOpacity = 0, smoothFactor = 0.5,
+    color = "black", opacity = 1, weight = 2) %>% 
+    addLayersControl(baseGroups = c("MAP Incidence 2021",
+                                    "Prevalance (RDT) DHS 2023"),
+                       overlayGroups = "Panzi Health Zone", 
+               options = layersControlOptions(collapsed = F))
+
 
 ```
 
