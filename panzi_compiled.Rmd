@@ -20,17 +20,21 @@ knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
 ```
 #  {.tabset .tabset-fade}
 
-## **Data cleaning** {.tabset .tabset-pills}
+## **Introduction** {.tabset .tabset-pills}
 
 
 ```{r}
-
 if (!require("pacman")) install.packages("pacman")
 
 pacman::p_load(rio, 
                Hmisc,
                downloadthis,
                flextable,
+               malariaAtlas,
+               raster,
+               here,
+               tmap,
+               sf,
                viridisLite,
                stringdist,
                tidyverse)
@@ -42,6 +46,56 @@ pacman::p_install_gh("moodymudskipper/powerjoin")
 library(ggupset)
 library(Rtesunate)
 library(powerjoin)
+
+
+pf_inc22 <- raster(here("202406_Global_Pf_Incidence_Rate_COD_2022.tiff"))
+
+drc_sf <- getShp(ISO = "COD") %>% 
+  st_as_sf()
+
+geo_codes_dhis2 <- rio::import("C:/Users/omp2/OneDrive - CDC/mgd/drc/geoFeatures_2025-01-19.rds")
+
+
+zds <- geo_codes_dhis2 %>% 
+  sf::st_drop_geometry() %>% 
+  filter(levelName == "Zone de Sante" & str_detect(name, "Panzi")) %>% 
+  sf::st_as_sf()
+
+diff <- st_difference(drc_sf, zds) 
+
+
+# name as 'Panzi Zone de Santé'
+
+health_area <- geo_codes_dhis2 %>% 
+  sf::st_drop_geometry() %>% 
+  filter(str_detect(parentName, "Panzi")) %>% 
+  filter(!str_detect(parentName, "^sk")) %>% 
+  filter(levelName != "Formation Sanitaire (FOSA)") %>% 
+  sf::st_as_sf()
+
+
+fs <- geo_codes_dhis2 %>% 
+  sf::st_drop_geometry() %>% 
+  filter(parentName %in% health_area$name) %>% 
+  sf::st_as_sf()
+
+
+tmap_mode("view")
+tm_shape(pf_inc22)+
+tm_raster()+
+    tm_shape(diff)+
+  tm_fill("azure3", alpha = 0.5)+
+  tm_shape(zds)+
+  tm_borders()
+
+```
+
+
+## **Data cleaning** {.tabset .tabset-pills}
+
+
+```{r}
+
 
 
 data_loc <- here::here("linelist", "LL_GPM_PANZI_23_01_2025_AS_RAJ.xlsx")
