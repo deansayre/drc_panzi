@@ -23,7 +23,7 @@ knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
 ## **Introduction** {.tabset .tabset-pills}
 
 
-```{r}
+```{r out.width= 700, out.height = 700}
 if (!require("pacman")) install.packages("pacman")
 
 pacman::p_load(rio, 
@@ -2906,6 +2906,163 @@ case_loc %>%
   DT::datatable(filter = 'top')
 
 ```
+
+##### Cases reported in routine
+```{r}
+routine_case <- rio::import(here("routine_data", "cas_confirme_02_27_25.xlsx")) %>% 
+  pivot_longer(-c(1,2)) %>% 
+  rename(hf = organisationunitname) %>% 
+  mutate(month = word(name, 1, sep = " "), 
+         month = factor(case_when(month == "Janvier" ~ "1", 
+                           month == "Février" ~ "2",
+                           month == "Mars"  ~ "3", 
+                           month == "Avril"  ~ "4",
+                           month == "Mai"  ~ "5", 
+                           month == "Juin"  ~ "6",
+                           month == "Juillet"  ~ "7", 
+                           month == "Août"  ~ "8",
+                           month == "Septembre"  ~ "9", 
+                           month == "Octobre"  ~ "10",
+                           month == "Novembre"  ~ "11", 
+                           month == "Décembre" ~ "12"), 
+                        levels = map(seq(1,12,1), ~as.character(.x))), 
+         year = as.numeric(word(name, 2, sep = " "))) %>% 
+  arrange(year, month) 
+
+
+tdr_over5_a <- routine_case %>% 
+  filter(dataname == "A 1.4 TDR positif >=5 ans") %>% 
+  mutate(dataname = "num") %>% 
+  group_by(hf, name) %>% 
+  mutate(n = row_number()) %>% 
+  ungroup() %>% 
+  mutate(dataname = paste0(dataname, "_", n)) %>% 
+  filter(dataname %in% c("num_1", "num_2")) %>%   ## no entries in 3 and 4; only one facility seems to have this
+  select(-n) %>% 
+  pivot_wider(names_from = "dataname", 
+              values_from = "value") %>% 
+  mutate(check = case_when(!is.na(num_1) & !is.na(num_2) ~ "error", 
+                           .default = "okay"))
+
+test <- tdr_over5_a %>% 
+  filter(check == "error")
+
+tdr_over5 <- tdr_over5_a %>% 
+  mutate(total_rdt_5plus = case_when(!is.na(num_1) ~ num_1, 
+                           !is.na(num_2) ~ num_2,
+                           is.na(num_1) & is.na(num_2) ~ NA_real_)
+         )
+
+tdr_under_5_a <-  routine_case %>% 
+  filter(dataname %in% c("A 1.4 TDR positif 2 - < 5 ans", 
+                         "A 1.4 TDR positif < 2 ans",
+                         "A 1.4 TDR positif <5 ans")) %>% 
+  mutate(scheme = case_when(dataname %in% c("A 1.4 TDR positif 2 - < 5 ans",
+                                            "A 1.4 TDR positif < 2 ans") ~ "scheme_1", 
+                            dataname == "A 1.4 TDR positif <5 ans" ~ "scheme_2")) %>% 
+  group_by(hf, name, scheme) %>% 
+  mutate(list = list(value)) %>% 
+  ungroup() %>% 
+  mutate(all_na = map_lgl(list, ~all(is.na(.x)))) %>% 
+  group_by(hf, name) %>% 
+  mutate(issue = map_lgl(list(all_na), ~all(.x == FALSE)))
+    
+#test <- tdr_under_5_a %>% 
+#  filter(issue == TRUE) # no issues in terms of more than one scheme used for 
+#                                                     same facility and period
+
+
+tdr_under_5 <- tdr_under_5_a %>% 
+  ungroup() %>% 
+  group_by(hf, name) %>% 
+  mutate(total = case_when(map_lgl(list(value), ~all(is.na(.x))) == TRUE ~ NA_real_, 
+                           .default = sum(value, na.rm = TRUE))
+         )%>% 
+  distinct(hf, name, total_rdt_cu5)
+
+
+tdr <- left_join(tdr_over5, tdr_under_5, by =c("hf", "name")) %>% 
+  select(-c(num_1, num_2))
+
+
+
+
+#test <- tdr_over5_a %>% 
+#  filter(n == 4|n==3)
+
+#  Hmisc::describe(tdr_over5$num_3)  #cols 3 and 4 are blank
+#  Hmisc::describe(tdr_over5$num_4)
+
+
+
+
+
+  mutate(month_year = paste0(month, "_", year)
+         ) %>% 
+  group_by(hf, name, dataname) %>% 
+  mutate(n = n(), 
+         dup_value = ifelse(n>1, map(list(value), 
+                                     na.omit), NA)) %>% 
+  ungroup() %>% 
+  rowwise() %>% 
+  mutate(length = length(dup_value))
+  
+
+
+```
+
+
+##### Commodities
+
+```{r}
+
+com_24 <- rio::import("intrants.xlsx") %>% 
+  linelist::clean_data() %>% 
+  select(c(periodname,orgunitlevel5,organisationunitname,
+           contains("jours_de_rupture_de_stock"))) %>% 
+  rename(asaq_1 = 4, 
+         asaq_2 = 5, 
+         asaq_3 = 6, 
+         asaq_4 = 7, 
+         al_1 = 8,
+         al_2 = 9, 
+         al_3 = 10, 
+         al_4 = 11, 
+         at_inj = 12, 
+         at_supp = 13, 
+         tdr = 14, 
+         sp = 15, 
+         net = 16) %>% 
+  mutate(across(c(asaq_1:net), ~as.numeric(as.character(.x))), 
+         type = case_when(str_detect(orgunitlevel5, "centre_de_santa_C") ~ "cs", 
+                          str_detect(orgunitlevel5, "poste_de_santa_C") ~ "ps",
+                          str_detect(orgunitlevel5, "centre_de_santa_C_de_ra_C_fa_C_rence") ~ "csr",
+                          str_detect(orgunitlevel5, "ha´pital_ga_C_na_C_ral_de_ra_C_fa_C_rence") ~ "hgr",
+                          .default = NA_character_), 
+         orgunitlevel5 = str_remove_all(orgunitlevel5, "kg_|                                          _poste_de_santa_C|_centre_de_santa_C_de_ra_C_fa_C_rence|_ha´pital_ga_C_na_C_ral_de_ra_C_fa_C_rence")) %>%  
+         mutate(orgunitlevel5 = str_remove_all(orgunitlevel5, "poste_de_santa_C|_centre_de_santa_C"),
+                name = paste0(type, "_", orgunitlevel5)) %>% 
+  filter(!is.na(orgunitlevel5)) %>% 
+  split(.$orgunitlevel5)
+  
+test <- com_24[["kidima_"]] %>% 
+  summarise(across(c(asaq_1:net), function(x){all(is.na(x))})
+  ) %>% 
+  mutate(keep = any(c(asaq_1:net) == TRUE))
+
+clifs_notes <- com_24 %>% 
+  map(~.x %>% 
+        summarise(across(c(asaq_1:net), function(x){all(is.na(x))})
+  ) %>% 
+  mutate(toss = all(c(asaq_1:net) == TRUE))) %>% 
+  discard(~.x$toss == TRUE)
+
+# only 4 facilities list stock outs of any kind during 2024
+
+
+```
+
+
 
 ## **Deaths** {.tabset .tabset-pills}
 
