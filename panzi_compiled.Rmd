@@ -2948,7 +2948,7 @@ test <- tdr_over5_a %>%
   filter(check == "error")
 
 tdr_over5 <- tdr_over5_a %>% 
-  mutate(total_rdt_5plus = case_when(!is.na(num_1) ~ num_1, 
+  mutate(hf_rdt_5plus = case_when(!is.na(num_1) ~ num_1, 
                            !is.na(num_2) ~ num_2,
                            is.na(num_1) & is.na(num_2) ~ NA_real_)
          )
@@ -2975,38 +2975,107 @@ tdr_under_5_a <-  routine_case %>%
 tdr_under_5 <- tdr_under_5_a %>% 
   ungroup() %>% 
   group_by(hf, name) %>% 
-  mutate(total = case_when(map_lgl(list(value), ~all(is.na(.x))) == TRUE ~ NA_real_, 
+  mutate(hf_rdt_cu5 = case_when(map_lgl(list(value), ~all(is.na(.x))) == TRUE ~ NA_real_, 
                            .default = sum(value, na.rm = TRUE))
          )%>% 
-  distinct(hf, name, total_rdt_cu5)
+  distinct(hf, name, hf_rdt_cu5)
 
 
-tdr <- left_join(tdr_over5, tdr_under_5, by =c("hf", "name")) %>% 
+tdr_a <- left_join(tdr_over5, tdr_under_5, by =c("hf", "name")) %>% 
   select(-c(num_1, num_2))
 
 
+#    Hmisc::describe(tdr$check) # all okay
 
-
-#test <- tdr_over5_a %>% 
-#  filter(n == 4|n==3)
-
-#  Hmisc::describe(tdr_over5$num_3)  #cols 3 and 4 are blank
-#  Hmisc::describe(tdr_over5$num_4)
-
-
-
-
-
-  mutate(month_year = paste0(month, "_", year)
-         ) %>% 
-  group_by(hf, name, dataname) %>% 
-  mutate(n = n(), 
-         dup_value = ifelse(n>1, map(list(value), 
-                                     na.omit), NA)) %>% 
-  ungroup() %>% 
-  rowwise() %>% 
-  mutate(length = length(dup_value))
+tdr <- tdr_a %>% 
+  select(-check)
   
+########################### Community health ##################################
+
+b_comm_data_a <- rio::import(here::here("routine_data", "b_tdr_cases.csv"))%>% 
+    select(-c(1,3:5, 7:9)) %>% 
+  pivot_longer(-c(1,2)) %>% 
+  rename(hf = organisationunitname) %>% 
+  mutate(month = word(name, 1, sep = " "), 
+         month = factor(case_when(month == "Janvier" ~ "1", 
+                           month == "Février" ~ "2",
+                           month == "Mars"  ~ "3", 
+                           month == "Avril"  ~ "4",
+                           month == "Mai"  ~ "5", 
+                           month == "Juin"  ~ "6",
+                           month == "Juillet"  ~ "7", 
+                           month == "Août"  ~ "8",
+                           month == "Septembre"  ~ "9", 
+                           month == "Octobre"  ~ "10",
+                           month == "Novembre"  ~ "11", 
+                           month == "Décembre" ~ "12"), 
+                        levels = map(seq(1,12,1), ~as.character(.x))), 
+         year = as.numeric(word(name, 2, sep = " "))) %>% 
+  arrange(year, month) %>% 
+  mutate(dataname = case_when(dataname == "B 10.2 TDRs réalisés  au SSC Dont positifs <5 ans" ~ "comm_cu_5_tdr", 
+                              dataname == "B 10.2 TDRs réalisés  au SSC Dont positifs >=5 ans" ~ "comm_5_plus_tdr", 
+                              .default = "error")) 
+  
+
+
+test <- b_comm_data_a |>
+  dplyr::summarise(n = dplyr::n(), .by = c(hf, name, month, year, dataname)) |>
+  dplyr::filter(n > 1L)
+
+test_1 <- b_comm_data_a %>% 
+  filter(hf %in%test$hf)
+
+#  Hmisc::describe(test_1$value) # empty
+
+b_comm_data <- b_comm_data_a %>% 
+  filter(!hf %in%test$hf) %>% 
+  pivot_wider(names_from = "dataname", 
+              values_from = "value")
+
+#   unique(b_comm_data$dataname)
+##### microscopy ###################################################
+
+d_micro_data_a <- rio::import(here::here("routine_data", "d_ge_cases.csv"))%>% 
+    select(-c(1,3:5, 7,8)) %>% 
+  pivot_longer(-c(1,2)) %>% 
+  rename(hf = organisationunitname) %>% 
+  mutate(month = word(name, 1, sep = " "), 
+         month = factor(case_when(month == "Janvier" ~ "1", 
+                           month == "Février" ~ "2",
+                           month == "Mars"  ~ "3", 
+                           month == "Avril"  ~ "4",
+                           month == "Mai"  ~ "5", 
+                           month == "Juin"  ~ "6",
+                           month == "Juillet"  ~ "7", 
+                           month == "Août"  ~ "8",
+                           month == "Septembre"  ~ "9", 
+                           month == "Octobre"  ~ "10",
+                           month == "Novembre"  ~ "11", 
+                           month == "Décembre" ~ "12"), 
+                        levels = map(seq(1,12,1), ~as.character(.x))), 
+         year = as.numeric(word(name, 2, sep = " "))) %>% 
+  arrange(year, month) %>% 
+  mutate(dataname = case_when(dataname == "D 5.3 Frottis réalisé dont Frottis positif - Examens positifs" ~ "ge_pos", 
+                   dataname == "D 5.3 Malades testés GE et TDR - Examens positifs" ~ "ge_et_tdr_pos", 
+                   .default = "error"))
+
+test <- d_micro_data_a |>
+  dplyr::summarise(n = dplyr::n(), .by = c(hf, name, month, year, dataname)) |>
+  dplyr::filter(n > 1L)
+
+test_1 <- d_micro_data_a %>% 
+  filter(hf %in%test$hf)
+
+#Hmisc::describe(test_1$value)   # is empty
+d_micro_data <- d_micro_data_a %>% 
+  filter(!hf %in%test$hf) %>% 
+  pivot_wider(names_from = "dataname", 
+              values_from = "value")
+
+routine_data_panzi <- reduce(list(tdr, b_comm_data, d_micro_data), 
+       ~full_join(.x,.y, by = c("hf", "name", "month", "year"))
+)
+
 
 
 ```
