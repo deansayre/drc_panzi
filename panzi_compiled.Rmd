@@ -3073,10 +3073,33 @@ d_micro_data <- d_micro_data_a %>%
   pivot_wider(names_from = "dataname", 
               values_from = "value")
 
+
+
 routine_data_panzi <- reduce(list(tdr, b_comm_data, d_micro_data), 
        ~full_join(.x,.y, by = c("hf", "name", "month", "year"))
 ) %>% 
-  ungroup()
+  ungroup() 
+
+################################ tests done ###################################
+
+
+
+
+
+###############################
+
+
+routine_data_panzi_out <- reduce(list(tdr, b_comm_data, d_micro_data), 
+       ~full_join(.x,.y, by = c("hf", "name", "month", "year"))
+) %>% 
+  ungroup() %>% 
+  mutate(across(c(5:10), ~case_when(is.na(.x) ~ 0, 
+                           .default = .x)), 
+         tot = hf_rdt_5plus + hf_rdt_cu5 + comm_cu_5_tdr + comm_5_plus_tdr + ge_pos, 
+         equal = tot == ge_et_tdr_pos)
+
+rio::export(routine_data_panzi_out, "routine_eval_panzi.xlsx")
+
 
 missing_counts <- routine_data_panzi %>% 
   group_by(hf) %>% 
@@ -3087,8 +3110,23 @@ missing_counts <- routine_data_panzi %>%
             comm_5_plus_tdr = sum(is.na(comm_5_plus_tdr)),
             ge_pos = sum(is.na(ge_pos)),
             ge_et_tdr_pos = sum(is.na(ge_et_tdr_pos))
-            )
+            ) %>% 
+  ungroup() %>% 
+  mutate(hf_rdt_equal = hf_rdt_5plus == hf_rdt_cu5, 
+         comm_rdt_equal = comm_cu_5_tdr == comm_5_plus_tdr, 
+         ge_equal = ge_pos == ge_et_tdr_pos, 
+         sous_titre = paste0("Months data missing: \nHF RDT <5: ", 
+                             hf_rdt_cu5, "; HF RDT >=5: ", 
+                             hf_rdt_5plus, "\nComm RDT <5: ", comm_cu_5_tdr, 
+                             "; Comm RDT >=5: ", comm_5_plus_tdr, 
+                             "\nSmear: ", ge_pos))
   
+missing_counts_list <- missing_counts %>% 
+  select(hf, sous_titre) %>% 
+  split(.$hf) %>% 
+  map(~.x %>% 
+        pull(sous_titre))
+
 
 comm_rm <- missing_counts %>% 
   filter(comm_cu_5_tdr == rows & comm_5_plus_tdr == rows) %>% 
@@ -3114,8 +3152,104 @@ routine_data_panzi_split <- routine_data_panzi %>%
   )
       
 
+ts <- routine_data_panzi_out %>% 
+  mutate(month_year = factor(name, 
+                             levels = unique(routine_data_panzi_out$name))) %>% 
+  select(hf, month_year, tot) %>% 
+  pivot_wider(names_from = "hf", values_from = "tot")
 
-test <- routine_data_panzi_split[[2]]
+ts_sts <- surveillance::sts(ts[,-1], 
+                            start = c(2019, 1), 
+                            frequency = 12)
+
+farr <- surveillance::farringtonFlexible(ts_sts, 
+                                         control = list(noPeriods=10,
+                                              b=3, w=3, weightsThreshold=2.58,
+                                              pThresholdTrend=1,
+                                              alpha=0.05))
+
+
+start_month <- as.numeric(word(glue::glue_collapse(as.character(farr@start), sep = "_"), 2, 
+                    sep = "_"))
+start_year <- as.numeric(word(glue::glue_collapse(as.character(farr@start), sep = "_"), 1, 
+                    sep = "_"))
+
+lev <-  unlist(unlist(map(list(2022, 2023, 2024, 2025), 
+    function(x)map(seq(1,12,1), function(a)paste0(x, "_", a))
+)
+))
+
+a <- as.data.frame(farr@upperbound) %>% 
+  pivot_longer(cols = everything()) %>% 
+  group_by(name) %>% 
+  mutate(month = row_number()) %>% 
+  ungroup() %>% 
+  mutate(month_trans_a = month-1+start_month+
+           12, 
+         month_trans = month_trans_a %% 12, 
+         year_trans_a = month_trans_a %/% 12, 
+         year_trans = year_trans_a-1+start_year,
+         year_trans = case_when(month_trans == 0 ~ year_trans - 1, 
+                                .default = year_trans), 
+         month_trans = factor(as.character(case_when(month_trans == 0 ~ 12, 
+                                        .default = month_trans)))) %>% 
+  select(-c(month, month_trans_a, year_trans_a)) %>% 
+  
+  left_join(select(routine_data_panzi_out, hf, month, year, tot), 
+            by = c("name" = "hf", 
+                   "month_trans" = "month", 
+                   "year_trans" = "year")) %>% 
+  rename(threshold = value) %>% 
+  mutate(outbreak = case_when(tot > threshold ~ "outbreak", 
+                              tot <= threshold ~ "routine", 
+                              is.na(threshold) ~ NA_character_, 
+                              .default = "error"), 
+         year_month = factor(paste0(year_trans, "_", month_trans), 
+                             levels = lev), 
+         labels = case_when(month_trans == 7 ~ paste0("July\n", year_trans), 
+                            month_trans == 1 ~ paste0("January\n", year_trans), 
+                            .default = "")
+  )
+
+x_axis <- a %>% 
+  distinct(month_trans,year_trans, .keep_all = TRUE) %>% 
+  pull(labels)
+
+a_list <- a %>% 
+  split(.$name) 
+
+hf_names <- map(names(a_list),~str_remove_all(.x, "kg "))
+
+graphs <- pmap(list(a_list, hf_names, missing_counts_list),
+       function(x,y,z) x %>% 
+        ggplot()+
+        geom_col(aes(x = year_month, y = tot, fill = outbreak), 
+                 color = "black")+
+        scale_fill_manual(values = c("firebrick4", "cadetblue4"))+
+        scale_x_discrete(labels = x_axis)+
+        geom_line(aes(x = year_month, y = threshold, group = 1), 
+                  color = "grey35", 
+                  linetype = "dotdash", 
+                  linewidth = 1.5)+
+        theme_minimal()+
+        theme(legend.position = "none")+
+        labs(y = "Reported Cases", 
+             x = "Month", 
+             title = y, 
+             subtitle = z)
+  )
+
+graphs[[7]]
+
+### to delete ###
+routine_data_panzi_split_metric <- routine_data_panzi %>% 
+  rename(month_year = name) %>%
+  mutate(across(c(5:10), ~case_when(is.na(.x) ~ 0, 
+                           .default = .x))
+         ) %>% 
+  group_by(hf, year, month) %>%
+  summarise(rdt_fac = hf_rdt_5plus+hf_rdt_cu5,
+            rdt_comm = comm_cu_5_tdr+comm_5_plus_tdr)
 
 
 
