@@ -33,6 +33,7 @@ pacman::p_load(rio,
                flextable,
                malariaAtlas,
                raster,
+               imputeTS,
                here,
                tmap,
                sf,
@@ -53,8 +54,8 @@ library(powerjoin)
 pf_inc22 <- raster(here("202406_Global_Pf_Incidence_Rate_COD_2022.tiff"))
 # pop_dens <- raster(here("cod_general_2020.tif"))
 
-# drc_sf <- getShp(ISO = "COD") %>% 
-#   st_as_sf()
+ drc_sf <- getShp(ISO = "COD") %>% 
+   st_as_sf()
 # 
 # sf::st_write(drc_sf, here("spatial", "drc_nat.shp"))
 
@@ -3347,9 +3348,11 @@ farr <- surveillance::farringtonFlexible(ts_sts,
                                               alpha=0.05))
 
 
-start_month <- as.numeric(word(glue::glue_collapse(as.character(farr@start), sep = "_"), 2, 
+start_month <- as.numeric(word(glue::glue_collapse(as.character(farr@start),
+                                                   sep = "_"), 2, 
                     sep = "_"))
-start_year <- as.numeric(word(glue::glue_collapse(as.character(farr@start), sep = "_"), 1, 
+start_year <- as.numeric(word(glue::glue_collapse(as.character(farr@start), 
+                                                  sep = "_"), 1, 
                     sep = "_"))
 
 lev <-  unlist(unlist(map(list(2022, 2023, 2024, 2025), 
@@ -3529,8 +3532,7 @@ ggplot()+
 #####       with imputation  ######################################
 
 
-# install.packages("imputeTS")
-# names(ts)
+# cases
 
 ts <- routine_data_panzi_out %>% 
   mutate(month_year = factor(name, 
@@ -3574,11 +3576,14 @@ farr_imput_cases <- surveillance::farringtonFlexible(cases_imput_sts,
                                               alpha=0.05))
 
 
-start_month <- as.numeric(word(glue::glue_collapse(as.character(farr_imput_cases@start), sep = "_"), 2, 
+start_month <- as.numeric(word(glue::glue_collapse(as.character(farr_imput_cases@start),
+                                                   sep = "_"), 2, 
                     sep = "_"))
-start_year <- as.numeric(word(glue::glue_collapse(as.character(farr_imput_cases@start), sep = "_"), 1, 
+start_year <- as.numeric(word(glue::glue_collapse(as.character(farr_imput_cases@start),
+                                                  sep = "_"), 1, 
                     sep = "_"))
-unique(word(unique(ts_list$month_year), 1, sep = " "))
+
+#unique(word(unique(ts_list$month_year), 1, sep = " "))
 
 ts_list_join <- select(ts_list, hf, month_year, total) %>% 
   mutate(month = factor(as.character(case_when(word(month_year, 1, sep = " ") == "Janvier" ~ 1, 
@@ -3596,7 +3601,8 @@ ts_list_join <- select(ts_list, hf, month_year, total) %>%
          year = as.numeric(word(month_year, 2, sep = " "))
   )
 
-a_new <- as.data.frame(farr_imput_cases@upperbound) %>% 
+
+a_new_a <- as.data.frame(farr_imput_cases@upperbound) %>% 
   pivot_longer(cols = everything()) %>% 
   group_by(name) %>% 
   mutate(month = row_number()) %>% 
@@ -3616,8 +3622,251 @@ a_new <- as.data.frame(farr_imput_cases@upperbound) %>%
                    "month_trans" = "month", 
                    "year_trans" = "year")) %>% 
   rename(threshold = value) %>% 
-  mutate(outbreak = case_when(total > threshold ~ "outbreak", 
-                              total <= threshold ~ "routine", 
+  mutate(outbreak = case_when(total > threshold ~ "firebrick4", 
+                              total <= threshold ~ "cadetblue4", 
+                              is.na(threshold) ~ NA_character_, 
+                              .default = "error"), 
+         year_month = factor(paste0(year_trans, "_", month_trans), 
+                             levels = lev), 
+         labels = case_when(month_trans == 7 ~ paste0("July\n", year_trans), 
+                            month_trans == 1 ~ paste0("January\n", year_trans), 
+                            .default = ""), 
+         name = str_replace_all(name, "HÃ´pital", "hopital"), 
+         name_match = str_remove_all(name, "kg | Poste de Santé|Poste de Santé| Centre de Santé| Hôpital Général de Référence| de Référence"), 
+         name_match = str_to_lower(str_replace_all(name_match, c(" " = "_", 
+                                                                 " / " = "_", 
+                                                                 "/" = "_"))),
+         name_match = case_when(name_match == "kambandambi" ~ "kamba_ndambi", 
+                                name_match == "kiala_kamba" ~ "kiala_nkamba", 
+                                name_match == "panzi___makita" ~ "makitapanzi", 
+                                name_match == "tsakala_panzi" ~ "tshakala_panzi", 
+                                name_match == "kambandambi" ~ "kamba_ndambi", 
+                                .default = name_match)
+  )
+
+ll_monthly_summary <- data_6 %>% 
+  ungroup() %>% 
+  mutate(month = as.numeric(word(date_de_notification, 2, sep = "-")), 
+         year = word(date_de_notification, 1, sep = "-")) %>% 
+  group_by(etablissement_recu, month, year) %>% 
+  summarise(total_cases = n(), 
+            malaria = sum(tdr1 == "positif", na.rm = TRUE)) %>% 
+  ungroup() %>% 
+  mutate(name_match = str_remove_all(etablissement_recu, c("hgr_|cs_|ps_")))
+
+
+
+a_new <- a_new_a %>% 
+  mutate(month_trans = as.numeric(as.character(month_trans)), 
+         year_trans = as.character(year_trans)) %>% 
+  left_join(ll_monthly_summary, by = c("name_match", 
+                                       "month_trans" = "month", 
+                                       "year_trans" = "year"))
+
+dx_method <- ts_list %>% 
+  group_by(hf) %>% 
+  summarise(hf_under5 = sum(hf_rdt_cu5), 
+            hf_5plus = sum(hf_rdt_5plus), 
+            community_under5 = sum(comm_cu_5_tdr), 
+            community_5plus = sum(comm_5_plus_tdr), 
+            smear = sum(ge_pos)) %>% 
+  ungroup() %>% 
+  mutate(method = case_when(community_under5 == 0 & community_5plus == 0 & smear == 0 ~ "RDT only", 
+                             community_under5 == 0 & community_5plus == 0 ~ "RDT and smear", 
+                             smear == 0 ~ "RDT and community", 
+                             community_under5 != 0 & community_5plus != 0 & smear != 0 ~ "RDT, smear, and community", 
+                             .default = "error"))
+
+impute_label <- routine_data_panzi_out %>% 
+  mutate(month_year = factor(name, 
+                             levels = unique(routine_data_panzi_out$name)), 
+         across(c(5:10), ~case_when(.x == 0 ~ NA_real_, 
+                                    .default = .x)
+         )) %>% 
+  select(hf, c(3:9)) %>% 
+  left_join(select(dx_method, hf, method), by = "hf") %>% 
+  mutate(hf_rdt_5plus = case_when(is.na(hf_rdt_5plus) ~ "†", 
+                                  .default = NA_character_), 
+         hf_rdt_cu5 = case_when(is.na(hf_rdt_cu5) ~ "*", 
+                                  .default = NA_character_),
+         comm_cu_5_tdr = case_when(is.na(comm_cu_5_tdr) & str_detect(method, "community") ~ "§", 
+                                  .default = NA_character_),
+         comm_5_plus_tdr = case_when(is.na(comm_5_plus_tdr) & str_detect(method, "community") ~ "¶", 
+                                  .default = NA_character_),
+         ge_pos = case_when(is.na(ge_pos) & str_detect(method, "smear")  ~ "#", 
+                                  .default = NA_character_)) %>% 
+  rowwise() %>% 
+  mutate(impute = paste(na.omit(unlist(list(list(hf_rdt_cu5, hf_rdt_5plus, comm_cu_5_tdr, comm_5_plus_tdr, ge_pos)))),
+                       collapse = ", ")
+                     ) %>% 
+  select(hf, month, year, impute)
+
+a_new_1 <- a_new %>% 
+  mutate(month_trans = factor(month_trans), 
+         year_trans = as.numeric(year_trans)) %>% 
+  left_join(impute_label, by = c("name" = "hf", 
+                              "month_trans" = "month",
+                              "year_trans" = "year"))
+  
+
+
+a_new_2 <- a_new_1 %>% 
+  select(hf = name, threshold, year_month, total, outbreak, malaria, impute) %>% 
+  pivot_longer(cols = c(4,6)) %>% 
+  filter(!is.na(value)) %>% 
+  mutate(outbreak = case_when(name == "malaria" ~ "grey", 
+                              .default = outbreak))
+
+a_new_list <- a_new_2 %>% 
+  split(.$hf) 
+
+
+
+################### tests  #############
+
+
+ts <- routine_data_panzi_out %>% 
+  mutate(month_year = factor(name, 
+                             levels = unique(routine_data_panzi_out$name)), 
+         across(c(5:10), ~case_when(.x == 0 ~ NA_real_, 
+                                    .default = .x)
+         )) %>% 
+  select(-c(name, month, year, ge_et_tdr_pos, tot, equal)) %>% 
+  pivot_longer(cols = c(2:6))
+
+
+
+
+tests_farr <- routine_tests_performed_panzi %>% 
+  mutate(month_year = factor(name, 
+                             levels = unique(routine_tests_performed_panzi$name)), 
+         across(c(5:9), ~case_when(.x == 0 ~ NA_real_, 
+                                    .default = .x)
+         )) %>% 
+  rename(smear = `A 1.4 GE realise`) %>% 
+  select(-c(name, month, year, tot)) %>% 
+  pivot_longer(cols = c(2:6))
+
+
+
+tests_list <- map(unique(tests_farr$name), 
+               ~tests_farr %>% 
+                 filter(name == .x) %>% 
+                 split(.$hf) %>% 
+                 map(~.x %>% 
+                       imputeTS::na_seadec()) %>% 
+                 list_rbind() %>% 
+                 pivot_wider(names_from = "name", 
+                             values_from = "value")) %>% 
+  set_names(unique(tests_farr$name)) %>% 
+  reduce(~left_join(.x,.y, by = c("hf", "month_year"))) %>% 
+  mutate(across(c(3:7), ~replace_na(.x, 0)), 
+         total = rowSums(select(., c(3:7)), na.rm = TRUE))
+
+
+
+
+dx_method_test <- tests_list %>% 
+  group_by(hf) %>% 
+  summarise(hf_under5 = sum(hf_rdt_cu5), 
+            hf_5plus = sum(hf_rdt_5plus), 
+            community_under5 = sum(comm_cu_5_tdr), 
+            community_5plus = sum(comm_5_plus_tdr), 
+            smear = sum(smear)) %>% 
+  ungroup() %>% 
+  mutate(method = case_when(community_under5 == 0 & community_5plus == 0 & smear == 0 ~ "RDT only", 
+                             community_under5 == 0 & community_5plus == 0 ~ "RDT and smear", 
+                             smear == 0 ~ "RDT and community", 
+                             community_under5 != 0 & community_5plus != 0 & smear != 0 ~ "RDT, smear, and community", 
+                             .default = "error"))
+
+impute_label_test <- routine_tests_performed_panzi %>% 
+  mutate(month_year = factor(name, 
+                             levels = unique(routine_tests_performed_panzi$name)), 
+         across(c(5:9), ~case_when(.x == 0 ~ NA_real_, 
+                                    .default = .x)
+         )) %>% 
+  select(hf, c(3:9)) %>% 
+  rename(smear = `A 1.4 GE realise`) %>% 
+  left_join(select(dx_method_test, hf, method), by = "hf") %>% 
+  mutate(hf_rdt_5plus = case_when(is.na(hf_rdt_5plus) ~ "†", 
+                                  .default = NA_character_), 
+         hf_rdt_cu5 = case_when(is.na(hf_rdt_cu5) ~ "*", 
+                                  .default = NA_character_),
+         comm_cu_5_tdr = case_when(is.na(comm_cu_5_tdr) & str_detect(method, "community") ~ "§", 
+                                  .default = NA_character_),
+         comm_5_plus_tdr = case_when(is.na(comm_5_plus_tdr) & str_detect(method, "community") ~ "¶", 
+                                  .default = NA_character_),
+         smear = case_when(is.na(smear) & str_detect(method, "smear")  ~ "#", 
+                                  .default = NA_character_)) %>% 
+  rowwise() %>% 
+  mutate(impute = paste(na.omit(unlist(list(list(hf_rdt_cu5, hf_rdt_5plus, comm_cu_5_tdr, comm_5_plus_tdr, smear)))),
+                       collapse = ", ")
+                     ) %>% 
+  select(hf, month, year, impute)
+
+
+ts_imput_tests_farr <- tests_list %>% 
+  select(hf, month_year, total) %>% 
+  pivot_wider(names_from = "hf", 
+              values_from = "total")
+
+
+tests_sts <- surveillance::sts(ts_imput_tests_farr[,-1], 
+                            start = c(2019, 1), 
+                            frequency = 12)
+
+farr_impute_assay <- surveillance::farringtonFlexible(tests_sts, 
+                                         control = list(noPeriods=10,
+                                              b=3, w=3, weightsThreshold=2.58,
+                                              pThresholdTrend=1,
+                                              alpha=0.05))
+
+
+start_month <- as.numeric(word(glue::glue_collapse(as.character(farr_impute_assay@start), sep = "_"), 2, 
+                    sep = "_"))
+start_year <- as.numeric(word(glue::glue_collapse(as.character(farr_impute_assay@start), sep = "_"), 1, 
+                    sep = "_"))
+
+
+ts_list_join <- select(tests_list, hf, month_year, total) %>% 
+  mutate(month = factor(as.character(case_when(word(month_year, 1, sep = " ") == "Janvier" ~ 1, 
+                           word(month_year, 1, sep = " ") == "Fevrier" ~ 2,
+                           word(month_year, 1, sep = " ") == "Mars" ~ 3, 
+                           word(month_year, 1, sep = " ") == "Avril" ~ 4,
+                           word(month_year, 1, sep = " ") == "Mai" ~ 5, 
+                           word(month_year, 1, sep = " ") == "Juin" ~ 6,
+                           word(month_year, 1, sep = " ") == "Juillet" ~ 7, 
+                           word(month_year, 1, sep = " ") == "Aout" ~ 8,
+                           word(month_year, 1, sep = " ") == "Septembre" ~ 9, 
+                           word(month_year, 1, sep = " ") == "Octobre" ~ 10,
+                           word(month_year, 1, sep = " ") == "Novembre" ~ 11, 
+                           word(month_year, 1, sep = " ") == "Decembre" ~ 12))), 
+         year = as.numeric(word(month_year, 2, sep = " "))
+  )
+
+b <- as.data.frame(farr_impute_assay@upperbound) %>% 
+  pivot_longer(cols = everything()) %>% 
+  group_by(name) %>% 
+  mutate(month = row_number()) %>% 
+  ungroup() %>% 
+  mutate(month_trans_a = month-1+start_month+
+           12, 
+         month_trans = month_trans_a %% 12, 
+         year_trans_a = month_trans_a %/% 12, 
+         year_trans = year_trans_a-1+start_year,
+         year_trans = case_when(month_trans == 0 ~ year_trans - 1, 
+                                .default = year_trans), 
+         month_trans = factor(as.character(case_when(month_trans == 0 ~ 12, 
+                                        .default = month_trans)))) %>% 
+  select(-c(month, month_trans_a, year_trans_a)) %>% 
+  left_join(select(ts_list_join, hf, month, year, total), 
+            by = c("name" = "hf", 
+                   "month_trans" = "month", 
+                   "year_trans" = "year")) %>% 
+  rename(threshold = value) %>% 
+  mutate(outbreak = case_when(total > threshold ~ "#540b0e", 
+                              total <= threshold ~ "#fff3b0", 
                               is.na(threshold) ~ NA_character_, 
                               .default = "error"), 
          year_month = factor(paste0(year_trans, "_", month_trans), 
@@ -3626,11 +3875,63 @@ a_new <- as.data.frame(farr_imput_cases@upperbound) %>%
                             month_trans == 1 ~ paste0("January\n", year_trans), 
                             .default = ""), 
          name = str_replace_all(name, "HÃ´pital", "hopital")
+  ) %>% 
+  left_join(impute_label_test, by = c("name" = "hf", 
+                              "month_trans" = "month",
+                              "year_trans" = "year"))
+
+b_list_new <- b %>% 
+  split(.$name) 
+
+
+hf_names <- map(names(a_new_list),~str_remove_all(.x, "kg "))
+
+graphs <- pmap(list(a_new_list, hf_names, b_list_new),
+       function(x,y,z){ top <- x %>% 
+        ggplot()+
+        geom_col(aes(x = year_month, y = value, fill = outbreak, group = name), 
+                 color = "black", 
+                 position = "dodge")+
+        scale_fill_identity()+
+        scale_x_discrete(labels = x_axis)+
+        geom_line(aes(x = year_month, y = threshold, group = 1), 
+                  color = "grey35", 
+                  linetype = "dotdash", 
+                  linewidth = 1.5)+
+        geom_text(aes(x = year_month, y = 0, label = impute), 
+                  angle = 90, 
+                  hjust = 0)+
+        theme_minimal()+
+        theme(legend.position = "none")+
+        labs(y = "Reported Cases", 
+             x = element_blank(), 
+             title = y) 
+            # subtitle = z)
+       
+        bottom <- z %>% 
+          ggplot()+
+         geom_col(aes(x = year_month, y = total, fill = outbreak), 
+                  color = "black")+
+         scale_fill_identity()+
+         scale_x_discrete(labels = x_axis)+
+         geom_line(aes(x = year_month, y = threshold, group = 1), 
+                   color = "grey35", 
+                   linetype = "dotdash", 
+                   linewidth = 1.5)+
+         geom_text(aes(x = year_month, y = 0, label = impute), 
+                  angle = 90, 
+                  hjust = 0)+
+         theme_minimal()+
+         theme(legend.position = "none")+
+         labs(y = "Tests Performed", 
+              x = "Month")
+       
+       cowplot::plot_grid(top, bottom, ncol = 1, align = "hv", 
+                          axis = "tblr")
+       }
   )
 
-b_list <- b %>% 
-  split(.$name) 
-# now run 
+graphs[[3]]
 
 ```
 
