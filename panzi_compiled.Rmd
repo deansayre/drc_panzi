@@ -3714,8 +3714,13 @@ a_new_2 <- a_new_1 %>%
   select(hf = name, threshold, year_month, total, outbreak, malaria, impute) %>% 
   pivot_longer(cols = c(4,6)) %>% 
   filter(!is.na(value)) %>% 
-  mutate(outbreak = case_when(name == "malaria" ~ "grey", 
-                              .default = outbreak))
+  mutate(outbreak = factor(case_when(name == "malaria" ~ "grey", 
+                              .default = outbreak), 
+                           levels = c("grey",
+                                      "firebrick4", 
+                                      "cadetblue4")
+                           )
+         )
 
 a_new_list <- a_new_2 %>% 
   split(.$hf) 
@@ -3891,7 +3896,7 @@ graphs <- pmap(list(a_new_list, hf_names, b_list_new),
         ggplot()+
         geom_col(aes(x = year_month, y = value, fill = outbreak, group = name), 
                  color = "black", 
-                 position = "dodge")+
+                 position = position_dodge2(reverse = TRUE))+
         scale_fill_identity()+
         scale_x_discrete(labels = x_axis)+
         geom_line(aes(x = year_month, y = threshold, group = 1), 
@@ -3931,9 +3936,78 @@ graphs <- pmap(list(a_new_list, hf_names, b_list_new),
        }
   )
 
-graphs[[3]]
+filename <- map(hf_names, 
+                ~.x %>% 
+                  str_remove_all(" Poste de Santé|Poste de Santé| Hôpital Général de Référence| Centre de Santé| de Référence") %>% 
+                  str_replace_all(" ", "_") %>% 
+                  str_to_lower()
+) %>% 
+  map(~paste0(here::here("facility_output"), "/", .x, ".png"))
+
+walk2(filename, graphs, 
+      ~ggsave(filename = .x, 
+              plot = .y, 
+              dpi = 700, 
+              width = 11, 
+              height = 8, 
+              units = "in"))
 
 ```
+
+```{r}
+
+tpr_impute <- a_new_2 %>% 
+  filter(outbreak != "grey") %>% 
+  mutate(hf = str_replace_all(hf, c("é" = "e", 
+                                    "ô" = "o", 
+                                    "Hopital" = "hopital"))) %>% 
+  select(hf, year_month, value) %>% 
+  left_join(select(b, name, year_month, total), 
+            by = c("hf" = "name", 
+                   "year_month")) %>% 
+  ungroup() %>% 
+  mutate(tpr = 100*value/total)
+library(wesanderson)
+tpr_impute_graph <- tpr_impute %>% 
+  split(.$hf) %>% 
+  map2(map(names(.), ~str_remove_all(.x, "kg ")), 
+       function(x,y){
+        a <- x %>% 
+        mutate(month = as.numeric(word(year_month, 2, sep = "_")), 
+               year = word(year_month, 1, sep = "_"), 
+               outbreak = case_when((month %in% c(10, 11, 12) & year == "2024") | (month ==1 & year == "2025") ~ "yes",
+                                    .default = "no"))
+         
+        graph <- ggplot()+
+          geom_line(data = a, aes(x = month, y = tpr, group = year, color = year), 
+                    linewidth = 1.5)+
+          scale_color_manual(values= wes_palette("Moonrise3", n = 5))+
+          geom_point(data = filter(a, outbreak == "yes"), aes(x = month, y = tpr), 
+                     colour = "firebrick4", 
+                     size = 3)+
+          scale_x_continuous(breaks = seq(1,12,1))+
+          coord_cartesian(ylim = c(0,100))+
+          theme_minimal()+
+          labs(x = "Month", 
+             y = "Test Positivity Rate (%)", 
+             color = "Year",
+             title = y)
+        
+        return(graph)
+       }
+      )
+
+
+
+tpr_impute_graph[[3]]
+
+```
+
+
+```{r}
+
+```
+
 
 
 ##### Commodities
