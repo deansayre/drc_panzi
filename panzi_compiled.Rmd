@@ -35,6 +35,7 @@ pacman::p_load(rio,
                raster,
                imputeTS,
                here,
+               waffle,
                tmap,
                sf,
                leaflet,
@@ -2116,7 +2117,7 @@ data_6 <- data5_a %>%
          date_de_notification,
          date_debut_des_signes,
          date_de_consultation,
-         as = as.x,
+         as, #= as.x,
          village_quartier,
          etablissement_recu, 
          fievre, 
@@ -2145,6 +2146,8 @@ data_6 <- data5_a %>%
                                          "communaute" ~ "none", 
                                          NA ~ "none",
                                          .default = etablissement_recu))
+
+rio::export(data_6, "data_6.xlsx")
 
 mal <- filter(data_6, tdr1 == "positif" & cough_fever != "both")
 resp <- filter(data_6, cough_fever == "both" & tdr1 == "negatif")
@@ -2921,6 +2924,68 @@ case_loc %>%
   DT::datatable(filter = 'top')
 
 ```
+
+##### Mapping the outbreak over time
+```{r}
+
+fs1 <- fs %>% 
+  mutate(name_match = str_remove_all(name, "kg | Poste de Santé|Poste de Santé| Centre de Santé| Hôpital Général de Référence| de Référence"), 
+         name_match = str_to_lower(str_replace_all(name_match, c(" " = "_", 
+                                                                 " / " = "_", 
+                                                                 "/" = "_"))),
+         name_match = case_when(name_match == "kambandambi" ~ "kamba_ndambi", 
+                                name_match == "kiala_kamba" ~ "kiala_nkamba", 
+                                name_match == "panzi___makita" ~ "makitapanzi", 
+                                name_match == "tsakala_panzi" ~ "tshakala_panzi", 
+                                name_match == "kambandambi" ~ "kamba_ndambi", 
+                                .default = name_match)
+  )
+
+map <- data_6 %>% 
+  mutate(etablissement_recu1 = str_remove_all(etablissement_recu, "cs_|ps_|hgr_")) %>% 
+  group_by(etablissement_recu1, year_week_factor) %>% 
+  summarise(num = n(), 
+            deaths = sum(decede_non == "decede", na.rm = TRUE)) %>% 
+  left_join(fs1, by = c("etablissement_recu1" = "name_match")) %>% 
+  split(.$year_week_factor) %>% 
+  map(~.x %>% 
+        sf::st_as_sf())
+  
+a <- map(map, function(x) 
+leaflet::leaflet(map[[1]]) %>% 
+   addProviderTiles(providers$Esri.WorldGrayCanvas) %>% 
+  addMapPane("base", zIndex = 410) %>% 
+  addMapPane("top", zIndex = 420) %>% 
+  addCircleMarkers( ~rescale(num, c(1,10)),
+    stroke = FALSE, fillOpacity = 0.5) %>% 
+  addPolygons(
+    data = drc_prov, 
+    stroke = TRUE,
+    fillColor = ~pal(prev), fillOpacity = 1, smoothFactor = 0.5,
+    color = "black", opacity = 1, weight = 0.5, 
+    options = pathOptions(pane = "base"),
+    group = "Prevalance (RDT) DHS 2023") %>% 
+#  addRasterImage(pop_dens, colors = cb,
+#              group = "Population density") %>% 
+  addPolygons(
+    data = zds, 
+    stroke = TRUE, fillColor = "azure4", fillOpacity = 0.8, smoothFactor = 0.5,
+    color = "black", opacity = 1, weight = 0.8, 
+    options = pathOptions(pane = "top"),
+    group = "Panzi Health Zone") %>% 
+  addPolygons(
+    data = drc_sf, 
+    stroke = TRUE, fillOpacity = 0, smoothFactor = 0.5,
+    color = "black", opacity = 1, weight = 2) %>% 
+  addMarkers(data = kin) %>% 
+    addLayersControl(baseGroups = c("MAP Incidence 2021",
+                                    "Prevalance (RDT) DHS 2023"),
+                       overlayGroups = "Panzi Health Zone Mask", 
+               options = layersControlOptions(collapsed = F))
+)
+
+```
+
 
 ##### Cases reported in routine
 ```{r}
@@ -4005,6 +4070,108 @@ tpr_impute_graph[[3]]
 
 
 ```{r}
+
+
+
+waffle <- data_6 %>% 
+  mutate(waffle_cat = case_when(tdr1 == "positif" & cough_fever != "both" ~ "#FFC051",# "Malaria only", 
+                                tdr1 == "negatif" & cough_fever == "both" ~ "#004878", #"Respiratory only", 
+                                tdr1 == "positif" & cough_fever == "both" ~ "#3B455F", #"Malaria and Respiratory", 
+                                tdr1 == "negatif" & cough_fever != "both" ~ "grey50", #"Other", 
+                                tdr1 == "unknown" ~ "#A62420", #"Malaria unknown", 
+                                .default = NA)) %>% 
+ # filter(etablissement_recu == "hgr_panzi") %>% 
+  group_by(year_week_factor, waffle_cat, etablissement_recu) %>% 
+  summarise(count = n(), 
+            deaths = sum(decede_non == "decede", na.rm = TRUE)) %>% 
+  ungroup()
+
+waffle_fill <- data.frame(year_week_factor = unique(waffle$year_week_factor))
+  
+waffle_counts <- waffle %>% 
+  split(.$etablissement_recu) %>% 
+  map(~.x %>% 
+        full_join(waffle_fill, by = "year_week_factor") %>% 
+        mutate(count = ifelse(is.na(count), 100, count)))
+
+waffle_deaths <- waffle %>% 
+  filter(deaths !=0) %>% 
+  full_join(data.frame(etablissement_recu = unique(waffle$etablissement_recu))) %>% 
+  split(.$etablissement_recu) %>% 
+  map(~.x %>% 
+        full_join(waffle_fill, by = "year_week_factor") %>% 
+        mutate(deaths = ifelse(is.na(deaths), 100, deaths)
+        )
+  )
+
+waffle_graphs <- map2(waffle_counts, waffle_deaths,
+    function(x,y){
+top <- x %>% 
+ggplot(aes(fill = waffle_cat, values = count)) +
+  geom_waffle(color = "white", size = .25, n_rows = 5, flip = TRUE) +
+  facet_wrap(~year_week_factor, nrow = 1, strip.position = "bottom", drop = FALSE) +
+  scale_x_discrete(drop = FALSE) + 
+  scale_y_continuous(labels = function(x) x * 5, # make this multiplyer the same as n_rows
+                     expand = c(0,0))+
+  scale_fill_identity()+
+  coord_equal()+
+  theme_minimal()+
+  theme(
+    axis.title = element_blank(),
+    axis.text.x = element_text(size=8),
+    axis.text.y = element_text(size=8),
+  # Legend
+  legend.position = "top",
+  legend.title = element_blank(),
+  legend.spacing = unit(0.5, 'cm'),
+  legend.key.height= unit(0.5, 'cm'),
+  legend.key.width= unit(0.7, 'cm'),
+  legend.text = element_text(size=8,
+                             face = 'plain',
+                             color = "grey10"))
+
+if(all(is.na(y$waffle_cat))){bottom <-cowplot::ggdraw()+
+  cowplot::draw_text("No deaths reported from this facility")} else{
+    
+   y_scale <- ggplot_build(top)$layout$panel_scales_y[[1]]
+    
+    max_deaths <- max(y$deaths, na.rm = TRUE)
+    upper <- if (max_deaths/5 == floor(max_deaths/5)) {floor(max_deaths/5) + 5} else {ceiling(max_deaths/5)}
+    
+                 
+                 bottom <- y %>% 
+ ggplot(aes(fill = waffle_cat, values = deaths)) +
+   geom_waffle(color = "white", size = .25, n_rows = 5, flip = TRUE) +
+  facet_wrap(~year_week_factor, nrow = 1, strip.position = "bottom", drop = FALSE) +
+  scale_x_discrete(drop = FALSE) + 
+#   scale_y_continuous(y_scale)+
+   scale_fill_identity()+
+   coord_equal()+
+   theme_void()+
+   theme(
+     axis.title = element_blank(),
+     axis.text.x = element_text(size=8),
+     axis.text.y=element_blank(),
+     axis.ticks.y=element_blank(),
+   # Legend
+   legend.position = "top",
+   legend.title = element_blank(),
+   legend.spacing = unit(0.5, 'cm'),
+   legend.key.height= unit(0.5, 'cm'),
+   legend.key.width= unit(0.7, 'cm'),
+   legend.text = element_text(size=8,
+                              face = 'plain',
+                              color = "grey10"))
+}
+ 
+cowplot::plot_grid(top, NULL, bottom, ncol = 1, 
+                   rel_heights = c(5, -1, 2),
+                   align = "hv", axis = "tblr")
+
+})
+
+waffle_graphs[[7]]
+
 
 ```
 
