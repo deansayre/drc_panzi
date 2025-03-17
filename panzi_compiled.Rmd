@@ -12,7 +12,9 @@ output:
     toc: no
     includes:
       in_header: header.html
-
+editor_options: 
+  markdown: 
+    wrap: 72
 ---
 
 ```{r setup, include=FALSE}
@@ -22,6 +24,7 @@ knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
 #  {.tabset .tabset-fade}
 
 ## **Summary** {.tabset .tabset-pills}
+
 ```{r}
 if (!require("pacman")) install.packages("pacman")
 
@@ -149,11 +152,9 @@ data_tab <- tibble(`Data set` = c("Epidemiological line list",
 
 ```
 
-Data availability and quality limits the conclusions that can be drawn from 
-these analyses. Basic characteristics of data analyzed are provided in the table
-below.
-
-
+Data availability and quality limits the conclusions that can be drawn
+from these analyses. Basic characteristics of data analyzed are provided
+in the table below.
 
 ```{r echo = FALSE}
 
@@ -161,35 +162,35 @@ data_tab
 
 ```
 
+## **Introduction**
 
+In November 2024, reports of an unknown illness in Panzi, a health zone
+in the Democratic Republic of the Congo (DRC), including an alarming
+number of deaths concentrated in children under five, raised global
+alerts. Given the high mortality rate of the outbreak and the country’s
+history with outbreaks of highly pathogenic diseases such as Ebola, an
+emergency response was established to further investigate this outbreak
+and mitigate its impact. Rather than a novel pathogen, the outbreak was
+linked to malaria, along with other potential contributors, including
+malnutrition and respiratory infections.
 
-## **Introduction** 
+In early January 2025, CDC’s malaria subject-matter experts arrived in
+country to assist the Ministry of Health with the analysis of data to
+inform ongoing response activities to prevent further spread and death
+attributed to the outbreak.
 
-In November 2024, reports of an unknown illness in Panzi, a health zone in the 
-Democratic Republic of the Congo (DRC), including an alarming number of deaths 
-concentrated in children under five, raised global alerts. Given the high 
-mortality rate of the outbreak and the country’s history with outbreaks of 
-highly pathogenic diseases such as Ebola, an emergency response was established 
-to further investigate this outbreak and mitigate its impact. Rather than a 
-novel pathogen, the outbreak was linked to malaria, along with other potential 
-contributors, including malnutrition and respiratory infections. 
-
-In early January 2025, CDC’s malaria subject-matter experts arrived in country 
-to assist the Ministry of Health with the analysis of data to inform ongoing 
-response activities to prevent further spread and death attributed to the 
-outbreak.
-
-DRC is highly endemic for malaria, nationally accounting for the
-second greatest number of estimated cases in Africa in 2023 per the
-World Malaria Report. All residents are considered at risk for malaria
-infection; though incidence is more seasonal in some areas than others, no 
-portion of the country is spared. Modeled 2022 _Plasmodium falciparum_ (Pf) 
-incidence estimates from the [Malaria Atlas Project](https://malariaatlas.org/) 
-and Pf prevalence estimates in children under five years from the 
-[2023 Demographic and Health Survey](https://dhsprogram.com/methodology/survey/survey-display-597.cfm) 
-are provided below. A mask illustrating the location of Panzi is may be added or 
-removed. The blue icon denotes the location of the capital city of Kinshasa.
-
+DRC is highly endemic for malaria, nationally accounting for the second
+greatest number of estimated cases in Africa in 2023 per the World
+Malaria Report. All residents are considered at risk for malaria
+infection; though incidence is more seasonal in some areas than others,
+no portion of the country is spared. Modeled 2022 *Plasmodium
+falciparum* (Pf) incidence estimates from the [Malaria Atlas
+Project](https://malariaatlas.org/) and Pf prevalence estimates in
+children under five years from the [2023 Demographic and Health
+Survey](https://dhsprogram.com/methodology/survey/survey-display-597.cfm)
+are provided below. A mask illustrating the location of Panzi is may be
+added or removed. The blue icon denotes the location of the capital city
+of Kinshasa.
 
 ```{r include=FALSE}
 
@@ -296,7 +297,6 @@ kin <- sf::st_as_sf(tibble(lat = -4.346703,
               crs = 4326)
 ```
 
-
 ```{r out.width= 700, out.height = 700}
 
 leaflet::leaflet() %>%
@@ -334,18 +334,17 @@ leaflet::leaflet() %>%
 
 ```
 
-
 ## **Data cleaning** {.tabset .tabset-pills}
 
-Line list data (file name _`r line_name`_) contains `r nrow(data)` observations, 
-the most recent of which is dated `r line_last`.
+Line list data (file name *`r line_name`*) contains `r nrow(data)`
+observations, the most recent of which is dated `r line_last`.
 
-Lab data (file name _`r lab_name`_) contains `r nrow(lab)` observations, 
+Lab data (file name *`r lab_name`*) contains `r nrow(lab)` observations,
 the most recent of which is dated `r lab_last`.
 
-
 ### Data missingness
-The number of missing observations for each variable are noted below. 
+
+The number of missing observations for each variable are noted below.
 Note variables are listed in snakecase.
 
 ```{r}
@@ -381,10 +380,10 @@ missing_dl <- missing_obs %>%
 missing_dl
 ```
 
-
 ### Spelling changes
-Basic formatting and spelling changes are coded here. Explore code to review 
-changes made, along with the Excel file below. 
+
+Basic formatting and spelling changes are coded here. Explore code to
+review changes made, along with the Excel file below.
 
 ```{r}
 
@@ -437,11 +436,43 @@ entered_values <- map(names(data_char),
 spelling_changes <- rio::import("entered_free_text_with_spelling_change.xlsx") %>% 
   filter(!is.na(change_to))
 
-data1 <- data_1a %>% 
+data1b <- data_1a %>% 
   linelist::clean_variable_spelling(wordlists = spelling_changes,
                                     from = 2, 
                                     to = 3, 
-                                    spelling_vars = 1)
+                                    spelling_vars = 1) %>% 
+  mutate(duration_symp_consult = lubridate::time_length(interval(date_debut_des_signes,
+                                                                 date_de_consultation), 
+                                                        "days"))
+
+test <- data1b %>% 
+  filter(duration_symp_consult < 0 |duration_symp_consult >34 ) %>% 
+  select(n, duration_symp_consult, date_de_notification,
+         date_debut_des_signes, date_de_consultation) %>% 
+  mutate(across(c(3:5), ~as.character(.x)))
+
+
+rio::export(test, "date_issues.xlsx")
+
+date_change <- rio::import("date_issues1.xlsx")
+
+data1 <- data1b %>% 
+  left_join(date_change, by = "n") %>% 
+  mutate(debut_change = as.Date(debut_change), 
+         consultation_change = as.Date(consultation_change),
+         date_debut_des_signes = case_when(!is.na(debut_change)~ debut_change, 
+                                             .default = date_debut_des_signes.x), 
+         date_de_consultation = case_when(!is.na(consultation_change)~ consultation_change, 
+                                            .default = date_de_consultation.x), 
+         date_de_notification = date_de_notification.x) %>% 
+  select(-c(duration_symp_consult.x, date_debut_des_signes.x, date_de_consultation.x, 
+            date_de_notification.x,
+            duration_symp_consult.y, date_debut_des_signes.y, date_de_consultation.y, 
+            date_de_notification.y)) %>% 
+  mutate(duration_symp_consult = lubridate::time_length(interval(date_debut_des_signes,
+                                                                 date_de_consultation), 
+                                                        "days"))
+
 
 data2 <- data1 %>%  
   mutate(age_unit = word(age, sep = "_", -1), 
@@ -492,10 +523,7 @@ spell1
 
 ```
 
-
-
 ### Duplicates
-
 
 ```{r}
 
@@ -557,9 +585,9 @@ dupes <- filter(doublants_vrai, !is.na(id_to_discard)) %>%
 
 ```
 
-A total of `r nrow(filter(doublants_vrai, !is.na(id_to_discard)))` duplicates
-were removed, leaving a total of `r nrow(data3)` observations.
-
+A total of `r nrow(filter(doublants_vrai, !is.na(id_to_discard)))`
+duplicates were removed, leaving a total of `r nrow(data3)`
+observations.
 
 ```{r echo=FALSE}
 
@@ -568,10 +596,11 @@ dupes
 ```
 
 ### Processing complication and treatment data
-These data are entered as free text. Here they are standardized and processed
-so as to be more useable. New variables for "any artemisinin received", "any 
-antimalarial received" (artemisinin or quinine), and "any antibiotic received"
-are created.
+
+These data are entered as free text. Here they are standardized and
+processed so as to be more useable. New variables for "any artemisinin
+received", "any antimalarial received" (artemisinin or quinine), and
+"any antibiotic received" are created.
 
 ```{r}
 
@@ -708,7 +737,6 @@ tx_spell_dl <- treatment_spelling %>%
 
 ```
 
-
 ```{r echo = FALSE}
 
 tx_spell_dl
@@ -717,6 +745,7 @@ comp_spell_dl
 ```
 
 ### Processing location data
+
 ```{r}
 village <- data2 %>% 
   dplyr::distinct(as, village_quartier) %>% 
@@ -796,21 +825,20 @@ data5_c %>%
 
 ```
 
-
 ```{r echo = FALSE}
 
 village_spell_dl
 
 ```
 
-
-
 ## **Presentation and outcomes** {.tabset .tabset-pills}
-Additional information on patient presentation is provided in subsequent 
-sections. This portion serves to ensure that all individuals included in the
-data set meet the case definition. 
+
+Additional information on patient presentation is provided in subsequent
+sections. This portion serves to ensure that all individuals included in
+the data set meet the case definition.
 
 ### Counts of individual symptoms
+
 ```{r}
 
 data5 <- data5_c
@@ -838,20 +866,21 @@ ggplot(symptoms)+
 
 ### Symptom combinations, clinical diagnoses and case fatality rate
 
-**A** Upset plot of most common symptom combinations. Bar chart at the top 
-represents case counts of the symptom combinations indicated by points below 
-(individual symptoms present are indicated by black point). **B** Heatmap 
-indicating the diagnoses listed for those with the symptom combinations above. 
-Darker colors indicate a higher proportion of those with the symptom combination
-being listed with the respiratory diagnosis (black = 100%, white = 0%). **C** 
-Malaria RDT test positivity rate among those with above symptom combinations who
-were tested for malaria. Those without RDT results are excluded. **D** Case fatality
-rates of those presenting with above symptom combination. The black bar is the 
-overall case fatality rate; red bars represent the case fatality rate for those 
-with a positive RDT; green bars represent the case fatality rate for those 
-with a negative RDT; white bars represent the case fatality rate for those that
-do not have RDT information (and presumably were not tested for malaria).
-
+**A** Upset plot of most common symptom combinations. Bar chart at the
+top represents case counts of the symptom combinations indicated by
+points below (individual symptoms present are indicated by black point).
+**B** Heatmap indicating the diagnoses listed for those with the symptom
+combinations above. Darker colors indicate a higher proportion of those
+with the symptom combination being listed with the respiratory diagnosis
+(black = 100%, white = 0%). **C** Malaria RDT test positivity rate among
+those with above symptom combinations who were tested for malaria. Those
+without RDT results are excluded. **D** Case fatality rates of those
+presenting with above symptom combination. The black bar is the overall
+case fatality rate; red bars represent the case fatality rate for those
+with a positive RDT; green bars represent the case fatality rate for
+those with a negative RDT; white bars represent the case fatality rate
+for those that do not have RDT information (and presumably were not
+tested for malaria).
 
 ```{r}
 
@@ -1069,8 +1098,8 @@ ggplot(dx)+
   
 ```
 
-Click the button below to download a summary file of combinations of diagnoses
-and tests.
+Click the button below to download a summary file of combinations of
+diagnoses and tests.
 
 ```{r echo = FALSE}
 
@@ -1078,17 +1107,16 @@ dx_dl
 
 ```
 
-
 ### Focus on Malaria {.tabset .tabset-pills}
 
-Summary: Clinical determination of malaria infection does not appear to be a 
-reliable variable for analyses. HRP2-based rapid diagnostic tests may 
-overestimate prevalence of active infections in highly endemic areas due to 
-persistence of the antigen for 4 to 6 weeks after resolution of the infection, 
-but remains a more reliable indicator of infection than clinical presentation 
-alone. Future data collection efforts may benefit from additional questions of 
-all individuals with a positive RDT documenting the history of recent malaria 
-infection/treatment.
+Summary: Clinical determination of malaria infection does not appear to
+be a reliable variable for analyses. HRP2-based rapid diagnostic tests
+may overestimate prevalence of active infections in highly endemic areas
+due to persistence of the antigen for 4 to 6 weeks after resolution of
+the infection, but remains a more reliable indicator of infection than
+clinical presentation alone. Future data collection efforts may benefit
+from additional questions of all individuals with a positive RDT
+documenting the history of recent malaria infection/treatment.
 
 #### Permformance metrics of clinical classification in data set
 
@@ -1280,21 +1308,20 @@ flext_metrex
 
 ```
 
+There were **`r a+b`** individuals incorrectly classified according TDR
+testing results, and another **`r c`** individuals given a malaria
+status without testing results.
 
-There were **`r a+b`** individuals incorrectly classified according TDR testing 
-results, and another **`r c`** individuals given a malaria status without testing
-results.
+Performance metrics of clinical malaria classification versus RDT as
+gold standard:
 
-Performance metrics of clinical malaria classification versus RDT as gold 
-standard: 
+-   Sensitivity: `r sens`% (`r sens_num`/`r sens_den`)
+-   Specificity: `r spec`% (`r spec_num`/`r spec_den`)
+-   Positive Predictive Value: `r ppv`% (`r ppv_num`/`r ppv_den`)
+-   Negative Predictive Value: `r npv`% (`r npv_num`/`r npv_den`)
 
-* Sensitivity: `r sens`% (`r sens_num`/`r sens_den`)
-* Specificity: `r spec`% (`r spec_num`/`r spec_den`)
-* Positive Predictive Value: `r ppv`% (`r ppv_num`/`r ppv_den`)
-* Negative Predictive Value: `r npv`% (`r npv_num`/`r npv_den`)
-
-Note that `r sum(temp$counts)` observations (of `r nrow(data5_a)`) are missing
-RDT data and are not included above.
+Note that `r sum(temp$counts)` observations (of `r nrow(data5_a)`) are
+missing RDT data and are not included above.
 
 Weekly performance metrics are provided below.
 
@@ -1470,7 +1497,6 @@ full
 
 ```
 
-
 #### Clinical presentation of individuals classified as *NOT* having malaria
 
 ```{r }
@@ -1614,24 +1640,23 @@ full
 a <- if(npv >=50){"did not have malaria"} else {"actually had malaria"}
 ```
 
+Consistent with the NPV listed above, most individuals stated to be
+malaria negative by clinical means `r a`.
 
-Consistent with the NPV listed above, most individuals stated to be malaria 
-negative by clinical means `r a`.
+Clinical determination of 'malaria' will be ignored in favor of TDR
+results.
 
-Clinical determination of 'malaria' will be ignored in favor of TDR results.
+### Focus on Respiratory Diagonses
 
-### Focus on Respiratory Diagonses 
-
-Summary: Clinical determination of different respiratory infections does not 
-appear to be reliable variable for analyses based on available information. 
-Several diagnoses appear to have similar symptomatic profiles and do not 
-correlate with outcomes. Fever and cough appear to be the most common and 
-important symptoms noted by far; consider changing categorization of 'influenza'
-to 'cough and fever' moving forward. Several individuals do not have documented 
-evidence of these; consider dropping those observations as they are likely to be
-unrelated and may artificially inflate counts. 
-
-
+Summary: Clinical determination of different respiratory infections does
+not appear to be reliable variable for analyses based on available
+information. Several diagnoses appear to have similar symptomatic
+profiles and do not correlate with outcomes. Fever and cough appear to
+be the most common and important symptoms noted by far; consider
+changing categorization of 'influenza' to 'cough and fever' moving
+forward. Several individuals do not have documented evidence of these;
+consider dropping those observations as they are likely to be unrelated
+and may artificially inflate counts.
 
 ```{r}
 cols <-  c("fievre", "toux", "rhinorrhee", "dyspnee", 
@@ -1781,21 +1806,21 @@ ggsave(a, filename = here::here("output", "diagnosis_combo_outcome.png"),
 
 ```
 
-
 #### Figure of outcomes
 
-**A** Upset plot of most common clinical diagnosis combinations. Bar chart at the top 
-represents case counts of the diagnosis combinations indicated by points below 
-(individual symptoms present are indicated by black point). **B** Heatmap 
-indicating the symptoms listed for those with the diagnosis combinations above. 
-Darker colors indicate a higher proportion of those with the diagnosis combination
-being listed with the symptoms exhibited (black = 100%, white = 0%). **C** Case 
-fatality rates of those presenting with above diagnosis combination. The black bar is the 
-overall case fatality rate; red bars represent the case fatality rate for those 
-with a positive RDT; green bars represent the case fatality rate for those 
-with a negative RDT; white bars represent the case fatality rate for those that
-do not have RDT information (and presumably were not tested for malaria).
-
+**A** Upset plot of most common clinical diagnosis combinations. Bar
+chart at the top represents case counts of the diagnosis combinations
+indicated by points below (individual symptoms present are indicated by
+black point). **B** Heatmap indicating the symptoms listed for those
+with the diagnosis combinations above. Darker colors indicate a higher
+proportion of those with the diagnosis combination being listed with the
+symptoms exhibited (black = 100%, white = 0%). **C** Case fatality rates
+of those presenting with above diagnosis combination. The black bar is
+the overall case fatality rate; red bars represent the case fatality
+rate for those with a positive RDT; green bars represent the case
+fatality rate for those with a negative RDT; white bars represent the
+case fatality rate for those that do not have RDT information (and
+presumably were not tested for malaria).
 
 ![](output/diagnosis_combo_outcome.png)
 
@@ -1960,7 +1985,6 @@ ggsave(a, filename = here::here("output", "presentation_combo_outcome.png"),
 
 ```
 
-
 ```{r eval = FALSE}
 
 ## Correlation of RDT positivity and mortality by clinical presentation
@@ -2042,8 +2066,6 @@ symptom_combos <- list(all, missing_one, missing_both)
  
  
 ```
- 
-
 
 ```{r echo = FALSE, include = FALSE}
 
@@ -2058,11 +2080,10 @@ symptom_combos <- list(all, missing_one, missing_both)
  
 ```
 
-
-There are `r sum(symptom_combos[[3]]$Count, na.rm = TRUE)` patients that were 
-listed without _either_ fever or cough. Clinical presentations, counts, malaria
-RDT test positivity rate, and case fatality rates are listed below. 
-
+There are `r sum(symptom_combos[[3]]$Count, na.rm = TRUE)` patients that
+were listed without *either* fever or cough. Clinical presentations,
+counts, malaria RDT test positivity rate, and case fatality rates are
+listed below.
 
 ```{r echo = FALSE}
 
@@ -2071,6 +2092,7 @@ symptom_combos_flex[[3]]
 ```
 
 ### Matching lab data to line list
+
 ```{r}
 
 
@@ -2160,19 +2182,19 @@ lab_linelist_dl <- matches_a %>%
 
 ```
 
-Of the `r nrow(lab)` entires, `r nrow(temp)` were matched to a restricted line
-list limited to individuals listed as 'notified' prior to the last date of 
-sampling in the lab list (`r max(lab$date_de_prelevement, na.rm = TRUE)`). 
+Of the `r nrow(lab)` entires, `r nrow(temp)` were matched to a
+restricted line list limited to individuals listed as 'notified' prior
+to the last date of sampling in the lab list
+(`r max(lab$date_de_prelevement, na.rm = TRUE)`).
 
-`r nrow(matches)` matches were found by fuzzy matching from `r a` unique 
-individuals. 
+`r nrow(matches)` matches were found by fuzzy matching from `r a` unique
+individuals.
 
 ```{r echo = FALSE}
 lab_linelist_dl
 ```
 
 ### Lab results
-
 
 ```{r}
 
@@ -2222,14 +2244,13 @@ lab2
 
 ```
 
+Notez que le dénominateur de la prévalence pour toutes les catégories
+n'est pas 120 en raison de certaines données manquantes.
 
-Notez que le dénominateur de la prévalence pour toutes les catégories n'est pas 
-120 en raison de certaines données manquantes.
-
-En raison de l'impossibilité de faire correspondre les observations de 
-laboratoire avec la liste épidémiologique et de la taille relativement réduite 
-de l'échantillon, il n'est pas certain que ces résultats reflètent l'ensemble 
-de la population concernée.
+En raison de l'impossibilité de faire correspondre les observations de
+laboratoire avec la liste épidémiologique et de la taille relativement
+réduite de l'échantillon, il n'est pas certain que ces résultats
+reflètent l'ensemble de la population concernée.
 
 ## **Epidemiological curves** {.tabset .tabset-pills}
 
@@ -2398,12 +2419,12 @@ epicurves[[4]]
 ```
 
 ### Malaira status unknown
+
 ```{r}
 epicurves[[5]]
 ```
 
-
-### Other (TDR negative/unknown + not _both_ fever and cough)
+### Other (TDR negative/unknown + not *both* fever and cough)
 
 ```{r}
 
@@ -2412,10 +2433,9 @@ epicurves[[6]]
 ```
 
 ### Malnutrition
-Data on malnutrition are only available for `r nrow(mas)` individuals at the 
-of coding; these are not shown graphically
 
-
+Data on malnutrition are only available for `r nrow(mas)` individuals at
+the of coding; these are not shown graphically
 
 ## **Patient demographics** {.tabset .tabset-pills}
 
@@ -2532,7 +2552,8 @@ pyr_button
 ```
 
 #### Point de dispersion de la distribution des cas par rapport à la
-distribution de la population 
+
+distribution de la population
 
 Ce graphique est interactif.
 
@@ -2592,7 +2613,8 @@ plotly::ggplotly(plot,
 
 ```
 
-#### Répartition des cas de maladies individuelles par rapport à la 
+#### Répartition des cas de maladies individuelles par rapport à la
+
 répartition de la population.
 
 ##### Ages
@@ -2769,7 +2791,6 @@ age_dist_dl <- downloadthis::download_this(graph_1,
 graph_1
 ```
 
-
 ```{r echo = FALSE}
 
 age_dist_dl
@@ -2793,11 +2814,10 @@ sexe_dist_dl
 
 ```
 
-
-
-### Location 
+### Location
 
 #### Cases by village
+
 ```{r}
 #unique(data_6$decede_non)
 
@@ -2836,12 +2856,10 @@ cases_par_village
 cases_village_dl
 ```
 
-
-Des cas ont été signalés dans `r nrow(hist)` villages. Le nombre maximal de cas
-(`r max(hist$count, na.rm = TRUE)`) a été signalé par `r max_town`. Les villages
-`r under_10` ont signalé moins de 10 cas, et `r under_1` villages n'ont 
-signalé qu'un seul cas chacun.
-
+Des cas ont été signalés dans `r nrow(hist)` villages. Le nombre maximal
+de cas (`r max(hist$count, na.rm = TRUE)`) a été signalé par
+`r max_town`. Les villages `r under_10` ont signalé moins de 10 cas, et
+`r under_1` villages n'ont signalé qu'un seul cas chacun.
 
 #### Cases by village over time
 
@@ -2898,6 +2916,7 @@ heatmap_village
 #plotly::ggplotly(heatmap_village)
 
 ```
+
 #### Cases by health facility
 
 ##### Issues
@@ -2960,8 +2979,11 @@ temp1 <- hf_dhis_no_cases$hf %>%
   as.data.frame() %>% 
   flextable::flextable()
 ```
-There are `r length(hf_case_not_dhis$hf)` health facilities listed in the epidemiological line list that are not in the list of health facilities located 
-in the Panzi Health Zone per DHIS2. They are listed below. 
+
+There are `r length(hf_case_not_dhis$hf)` health facilities listed in
+the epidemiological line list that are not in the list of health
+facilities located in the Panzi Health Zone per DHIS2. They are listed
+below.
 
 ```{r echo = FALSE}
 
@@ -2969,17 +2991,15 @@ temp
 
 ```
 
-
-There are `r length(hf_dhis_no_cases$hf)` health facilities listed in the Panzi
-Health Zone per DHIS2 that do not have any cases listed in the line list. They
-are listed below. 
+There are `r length(hf_dhis_no_cases$hf)` health facilities listed in
+the Panzi Health Zone per DHIS2 that do not have any cases listed in the
+line list. They are listed below.
 
 ```{r echo = FALSE}
 
 temp1
 
 ```
-
 
 ```{r out.width= 700, out.height = 700}
 
@@ -3049,10 +3069,16 @@ case_loc %>%
 ```
 
 ##### Mapping the outbreak over time
+
 ```{r}
 
 fs1 <- fs %>% 
-  mutate(name_match = str_remove_all(name, "kg | Poste de Santé|Poste de Santé| Centre de Santé| Hôpital Général de Référence| de Référence"), 
+  mutate(type = case_when(str_detect(name, "Centre de Santé de Référence") ~ "csr", 
+                          str_detect(name, "Centre de Santé") ~ "cs", 
+                          str_detect(name, "Poste de Santé") ~ "ps", 
+                          str_detect(name, "Hôpital Général de Référence") ~ "hgr", 
+                          .default = NA),
+         name_match = str_remove_all(name, "kg | Poste de Santé|Poste de Santé| Centre de Santé| Hôpital Général de Référence| de Référence"), 
          name_match = str_to_lower(str_replace_all(name_match, c(" " = "_", 
                                                                  " / " = "_", 
                                                                  "/" = "_"))),
@@ -3061,24 +3087,99 @@ fs1 <- fs %>%
                                 name_match == "panzi___makita" ~ "makitapanzi", 
                                 name_match == "tsakala_panzi" ~ "tshakala_panzi", 
                                 name_match == "kambandambi" ~ "kamba_ndambi", 
-                                .default = name_match)
+                                .default = name_match), 
+         name_match = paste0(type, "_", name_match)
   )
 
-map <- data_6 %>% 
-  mutate(etablissement_recu1 = str_remove_all(etablissement_recu, "cs_|ps_|hgr_")) %>% 
-  group_by(etablissement_recu1, year_week_factor) %>% 
+map_a <- data_6 %>% 
+  group_by(etablissement_recu, year_week_factor) %>% 
   summarise(num = n(), 
             deaths = sum(decede_non == "decede", na.rm = TRUE)) %>% 
-  left_join(fs1, by = c("etablissement_recu1" = "name_match")) %>% 
+  left_join(fs1, by = c("etablissement_recu" = "name_match"))
+
+
+test <- janitor::get_dupes(map_a, etablissement_recu, year_week_factor)
+
+empty_geo_coord <- map_a %>% 
+  filter(is.na(level)) %>% 
+  filter(!etablissement_recu %in% test$etablissement_recu)
+
+keep <- st_intersection(sf::st_as_sf(map_a), sf::st_as_sf(zds))
+
+test <- janitor::get_dupes(keep, etablissement_recu, year_week_factor)
+
+  
+map <- keep %>%   
   split(.$year_week_factor) %>% 
   map(~.x %>% 
         sf::st_as_sf())
 
+test <- map[[1]]
+
+
+#### make tabs by week to show both cases and deaths
+
+weekly_map <- function(x, db){
+  maxes <- db %>% 
+    summarise(cases = max(num, na.rm = TRUE), 
+              deaths = max(deaths, na.rm = TRUE))
+  
+  max_case <- maxes %>% 
+    pull(cases)
+  
+  max_deaths <- maxes %>% 
+    pull(deaths)
+  
+  out <- leaflet::leaflet(x) %>% 
+   addProviderTiles(providers$Esri.WorldGrayCanvas) %>% 
+   addCircleMarkers(radius = ~sqrt(num),
+                    color = "cadetblue4",
+                    stroke = FALSE, fillOpacity = 0.5, 
+                    group = "Reported Cases") %>% 
+   addCircleMarkers(radius = ~sqrt(deaths),
+                    color = "firebrick4",
+                    stroke = FALSE, fillOpacity = 0.5, 
+                    group = "Reported Deaths") %>% 
+   addPolygons(
+    data = zds, 
+    stroke = TRUE, fillColor = "azure4", fillOpacity = 0.8, smoothFactor = 0.5,
+    color = "black", opacity = 1, weight = 0.8, 
+    options = pathOptions(pane = "top"),) %>% 
+  addPolygons(
+    data = drc_sf, 
+    stroke = TRUE, fillOpacity = 0, smoothFactor = 0.5,
+    color = "black", opacity = 1, weight = 2) %>% 
+    addLayersControl(baseGroups = c("Reported Cases",
+                                    "Reported Deaths"),
+               options = layersControlOptions(collapsed = F))
+}
+
+
+leaflet::leaflet(map[["2024 W50"]]) %>% 
+   addProviderTiles(providers$Esri.WorldGrayCanvas) %>% 
+   addCircleMarkers(radius = ~sqrt(num),
+                    color = "#1e5597",
+                    fill = TRUE,
+                    fillOpacity = 0.5, 
+                    group = "Reported Cases") %>% 
+   addCircleMarkers(radius = ~sqrt(deaths),
+                    color = "#972b1e",
+                    stroke = FALSE, fillOpacity = 0.5, 
+                    group = "Reported Deaths") %>% 
+   addPolygons(
+    data = sf::st_as_sf(zds),  fillOpacity = 0, smoothFactor = 0.5,
+    color = "black", opacity = 1, weight = 0.8) %>% 
+    addLayersControl(baseGroups = c("Reported Cases",
+                                    "Reported Deaths"),
+                     options = layersControlOptions(collapsed = F))
+
+
+
 make_tab <- function(isl) {         # function to make the tabs
   cat("::: {.panel}\n")             # Open tab
   cat("##", isl, "{.panel-name}\n") # Label tab
-  p <- plot_penguins(isl)           # Create plot
-  print(p)                          # Display plot
+  p <- weekly_map(x,db)             # Create plot
+  p                                 # Display plot
   cat("\n")                         # Space
   cat(":::\n")                      # Close tab
 }
@@ -3098,10 +3199,8 @@ leaflet::leaflet(map[[1]]) %>%
     color = "black", opacity = 1, weight = 0.5, 
     options = pathOptions(pane = "base"),
     group = "Prevalance (RDT) DHS 2023") %>% 
-#  addRasterImage(pop_dens, colors = cb,
-#              group = "Population density") %>% 
   addPolygons(
-    data = zds, 
+    data = sf::st_as_sf(zds_, 
     stroke = TRUE, fillColor = "azure4", fillOpacity = 0.8, smoothFactor = 0.5,
     color = "black", opacity = 1, weight = 0.8, 
     options = pathOptions(pane = "top"),
@@ -3119,8 +3218,8 @@ leaflet::leaflet(map[[1]]) %>%
 
 ```
 
-
 ##### Cases reported in routine
+
 ```{r}
 
 routine_case <- routine_case_a %>% 
@@ -3726,7 +3825,6 @@ ggplot()+
 
 ```
 
-
 ```{r}
 #####       with imputation  ######################################
 
@@ -4277,7 +4375,6 @@ tpr_impute_graph[[3]]
 
 ```
 
-
 ```{r}
 
 
@@ -4384,8 +4481,6 @@ waffle_graphs[[7]]
 
 ```
 
-
-
 ##### Commodities
 
 ```{r}
@@ -4435,8 +4530,6 @@ clifs_notes <- com_24 %>%
 
 
 ```
-
-
 
 ## **Deaths** {.tabset .tabset-pills}
 
@@ -4511,7 +4604,6 @@ death_explore_chart
 
 ```
 
-
 ```{r}
 
 hf_with_deaths <- death_explore_chart_a %>% 
@@ -4546,6 +4638,7 @@ combo_plot <- map(hf_with_deaths_full, ~cowplot::plot_grid(plotlist = .x,
 
 combo_plot[[1]]
 ```
+
 ```{r}
 
 qui_decede_week <- map(list(data_6, 
@@ -4636,8 +4729,6 @@ qui_decede_hf
 
 ```
 
-
-
 ### By diagnosis and age
 
 ```{r}
@@ -4670,10 +4761,6 @@ test %>%
 
 
 ```
-
-
-
-
 
 ```{r eval=FALSE}
 
@@ -4718,7 +4805,6 @@ orphan_cases <- data5_a %>%
 hf_dhis_no_cases <- filter(hf, is.na(type_cases))
 
 ```
-
 
 ```{r eval = FALSE}
 
@@ -4805,4 +4891,3 @@ flextable::save_as_docx(a, path = paste0(here::here("linelist",
 
 
 ```
-
