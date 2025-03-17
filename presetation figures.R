@@ -63,8 +63,8 @@ ggsave(filename = here::here("mb_presentation","inc_est.png"),
        units = "in")
 
 
-
-
+?colorRampPalette
+colorRampPalette()
 
 pf_inc22 <- raster(here("202406_Global_Pf_Incidence_Rate_COD_2022.tiff"))
 # pop_dens <- raster(here("cod_general_2020.tif"))
@@ -362,6 +362,7 @@ unk <- filter(data_6, tdr1 == "unknown")
 temp <- filter(data_6, cough_fever == "both" | tdr1 == "positif")
 other <- filter(data_6, !n %in% temp$n)
 
+Hmisc::describe(unk$decede_non)
 
 all_data <- list(data_6, 
                  mal, 
@@ -444,6 +445,213 @@ walk2(epicurves, filenames, ~ggsave(filename = .y, plot = .x,
                                        units = "in")
 )
 
+
+test <- data_6 %>% 
+  filter(duration_symp_consult < 0 |duration_symp_consult >34 ) %>% 
+  select(n, duration_symp_consult, date_de_notification,
+         date_debut_des_signes, date_de_consultation) %>% 
+  mutate(across(c(3:5), ~as.character(.x)))
+
+
+rio::export(test, "date_issues.xlsx")
+
+date_change <- rio::import("date_issues1.xlsx")
+
+data_6a <- data_6 %>% 
+  left_join(date_change, by = "n") %>% 
+  mutate(debut_change = as.Date(debut_change), 
+         consultation_change = as.Date(consultation_change),
+         date_debut_des_signes.x = case_when(!is.na(debut_change)~ debut_change, 
+                                             .default = date_debut_des_signes.x), 
+         date_de_consultation.x = case_when(!is.na(consultation_change)~ consultation_change, 
+                                            .default = date_de_consultation.x)) %>% 
+  select(-c(duration_symp_consult.x)) %>% 
+  mutate(duration_symp_consult = lubridate::time_length(interval(date_debut_des_signes.x,
+                                                                 date_de_consultation.x), 
+                                                        "days"))
+
+test1 <- data_6a %>% 
+  filter(duration_symp_consult < 0 |duration_symp_consult >34 ) 
+
+
+plots <- data_6a %>% 
+  mutate(dz = case_when(tdr1 == "positif" & cough_fever != "both" ~ "Malaria only", 
+                        cough_fever == "both" & tdr1 == "negatif" ~ "Respiratory only",
+                        tdr1 == "positif" & cough_fever == "both" ~ "Malaria and Respiratory",
+                        tdr1 == "unknown" ~ "Malaria Unknown", 
+                        .default = "other")) %>% 
+  split(.$dz) 
+
+age_graphs <- plots %>% 
+  map2(names(.),
+       function(x,y){
+         
+         cases <- sum(x$decede_non == "non_decede")
+         deaths <- sum(x$decede_non == "decede")
+         
+        a <-  x %>% 
+        ggplot(aes(x = age_years, colour = decede_non))+
+        stat_ecdf(linewidth = 1.5)+
+        scale_color_manual(values = c("firebrick4", "cadetblue4"))+
+        scale_x_continuous(breaks = c(0,5,15,25,50,75, Inf))+  
+        theme_minimal()+
+         labs(title = y,
+              x = "Age (years)",
+              y = "Empirical Cumulative Distribution",
+              subtitle = paste0("Number surviving = ", cases,"\nNumber died = ", deaths))+
+          theme(legend.position = "none", 
+                panel.grid.minor.x = element_blank())
+          
+        
+        return(a)
+       }
+  )
+
+
+filenames <- map(names(plots), 
+                 ~paste0(here::here("mb_presentation", .x),"_age_distribution.png"))
+
+
+walk2(age_graphs, filenames, ~ggsave(filename = .y, plot = .x,
+                                    dpi = 700, 
+                                    width = 13.2, 
+                                    height = 6.4, 
+                                    units = "in")
+)
+
+
+duration_graphs <- plots %>% 
+  map(~.x %>% 
+        filter(duration_symp_consult > 0 & duration_symp_consult < 100)) %>% 
+  map2(names(.),
+       function(x,y){
+         
+         cases <- sum(x$decede_non == "non_decede")
+         deaths <- sum(x$decede_non == "decede")
+         
+         a <-  x %>% 
+           ggplot(aes(x = duration_symp_consult, colour = decede_non))+
+           stat_ecdf(linewidth = 1.5)+
+           scale_color_manual(values = c("firebrick4", "cadetblue4"))+
+           scale_x_continuous(breaks = c(0,1,2,3,4,5,10,15, 30,Inf))+  
+           theme_minimal()+
+           coord_cartesian(xlim = c(0, 35))+
+           labs(title = y,
+                x = "Duration illness onset to care (days)",
+                y = "Empirical Cumulative Distribution",
+                subtitle = paste0("Number surviving = ", cases,"\nNumber died = ", deaths))+
+           theme(legend.position = "none", 
+                 panel.grid.minor.x = element_blank())
+         
+         
+         return(a)
+       }
+  )
+  
+
+filenames <- map(names(plots), 
+                 ~paste0(here::here("mb_presentation", .x),"_careseeking_distribution.png"))
+
+
+walk2(duration_graphs, filenames, ~ggsave(filename = .y, plot = .x,
+                                     dpi = 700, 
+                                     width = 13.2, 
+                                     height = 6.4, 
+                                     units = "in"))
+      
+
+      
+antimal_graphs <- plots %>% 
+        map(~.x %>% 
+             # filter(!is.na(any_artemisinins)) %>% 
+              group_by(decede_non) %>% 
+              summarise(perc_drug = 100*sum(any_antimalarial == TRUE)/(sum(any_antimalarial == TRUE)+
+                                                                    sum(any_antimalarial == FALSE)))
+            )%>% 
+        map2(names(.),
+             function(x,y){
+               
+               
+               a <-  x %>% 
+                 ggplot(aes(x = decede_non, y = perc_drug, fill = decede_non))+
+                 geom_col()+
+                 scale_fill_manual(values = c("firebrick4", "cadetblue4"))+
+                 theme_minimal()+
+                 coord_cartesian(ylim = c(0,100))+
+                 labs(title = y,
+                      x = element_blank(),
+                      y = "Percentage receiving drug")+
+                 theme(legend.position = "none", 
+                       axis.text.x = element_blank())
+               
+               
+               return(a)
+             }
+        )
+
+filenames <- map(names(plots), 
+                       ~paste0(here::here("mb_presentation", .x),"_antimal_drug.png"))
+      
+      
+walk2(antimal_graphs, filenames, ~ggsave(filename = .y, plot = .x,
+                                                dpi = 700, 
+                                                width = 13.2, 
+                                                height = 6.4, 
+                                                units = "in")      
+)
+
+
+
+antibx_graphs <- plots %>% 
+  map(~.x %>% 
+        # filter(!is.na(any_artemisinins)) %>% 
+        group_by(decede_non) %>% 
+        summarise(perc_drug = 100*sum(any_abx == TRUE)/(sum(any_abx == TRUE)+
+                                                                   sum(any_abx == FALSE)))
+  )%>% 
+  map2(names(.),
+       function(x,y){
+         
+         
+         a <-  x %>% 
+           ggplot(aes(x = decede_non, y = perc_drug, fill = decede_non))+
+           geom_col()+
+           scale_fill_manual(values = c("firebrick4", "cadetblue4"))+
+           theme_minimal()+
+           coord_cartesian(ylim = c(0,100))+
+           labs(title = y,
+                x = element_blank(),
+                y = "Percentage receiving drug")+
+           theme(legend.position = "none", 
+                 axis.text.x = element_blank())
+         
+         
+         return(a)
+       }
+  )
+
+filenames <- map(names(plots), 
+                 ~paste0(here::here("mb_presentation", .x),"_antibx_drug.png"))
+
+
+walk2(antibx_graphs, filenames, ~ggsave(filename = .y, plot = .x,
+                                          dpi = 700, 
+                                          width = 13.2, 
+                                          height = 6.4, 
+                                          units = "in")      
+)
+
+
+
+
+
+
+
+
+
+
+
+
 all_hf <- data_6 %>% 
   distinct(etablissement_recu, year_week_factor)
 
@@ -469,22 +677,95 @@ total_deaths <- heatmap_hf_a %>%
   arrange(total)
 
 
+
+
 heatmap_hf <- heatmap_hf_a %>% 
   mutate(etablissement_recu = factor(etablissement_recu, 
                                      levels = unique(total_deaths$etablissement_recu1))) %>% 
   ggplot()+
   geom_tile(aes(x = year_week_factor, y = etablissement_recu, fill = deaths))+
-  scale_fill_viridis_c(option = "B")+
-  labs(x = "Weeks", 
+  scale_fill_gradient2(low = "white", mid = "black", high = "#d1190a", midpoint = 8,
+                       na.value = NA)+
+#  scale_fill_viridis_c(option = "B")+
+  labs(x = element_blank(), 
        y = element_blank(), 
        fill = "Deaths")+
-  theme(axis.text.x = element_text(angle = 90), vjust = 1, 
-        hjust = 1)
+  theme(axis.text.x = element_blank(), 
+        axis.text.y = element_blank(),  
+        legend.position = "none")
 
 
-total_deaths %>% 
-  mutate(total = -1*total) %>% 
+ggsave(heatmap_hf, filename = here::here("mb_presentation","deaths_per_hf_heatmap.png"),
+       dpi = 700,   width = 13.2,  height = 6.4,  units = "in")
+
+legend <- cowplot::get_legend(heatmap_hf_a %>% 
+                                mutate(etablissement_recu = factor(etablissement_recu, 
+                                                                   levels = unique(total_deaths$etablissement_recu1))) %>% 
+                                ggplot()+
+                                geom_tile(aes(x = year_week_factor, y = etablissement_recu, fill = deaths))+
+                                scale_fill_gradient2(low = "white", mid = "black", high = "#d1190a", midpoint = 8,
+                                                     na.value = NA)+
+                                #  scale_fill_viridis_c(option = "B")+
+                                labs(x = element_blank(), 
+                                     y = element_blank(), 
+                                     fill = "Deaths")+
+                                theme(axis.text.x = element_blank(), 
+                                      axis.text.y = element_blank())
+)
+
+legend_heatmap <- cowplot::ggdraw(legend)
+
+ggsave(legend_heatmap, filename = here::here("mb_presentation","hf_heatmap_legend.png"),
+       dpi = 700,   width = 13.2,  height = 6.4,  units = "in")
+
+
+
+
+epi_curve_deaths <- ggplot(all_epicurves[[1]])+
+  geom_col(aes(x = year_week_factor, y = death_count), 
+           fill = "grey", 
+           color = "black")+
+  labs(x = element_blank(), 
+       y = "Deaths")+
+  theme(axis.text.x = element_blank())
+
+ggsave(epi_curve_deaths, filename = here::here("mb_presentation","deaths_epicurve.png"),
+       dpi = 700,   width = 13.2,  height = 6.4,  units = "in")
+
+
+
+
+
+
+total_deaths <- heatmap_hf_a %>% 
+  group_by(etablissement_recu) %>% 
+  summarise(total = sum(deaths)) %>% 
+  ungroup() %>% 
+  mutate(etablissement_recu1 = fct_reorder(factor(etablissement_recu), total, 
+                                           .desc = TRUE)) %>% 
+  arrange(-total)
+
+
+
+total_deaths_graph <- total_deaths %>% 
+ # mutate(total = -1*total) %>% 
   ggplot()+
-  geom_col(aes(y = total, x = desc(etablissement_recu1)))+
-    coord_flip()+
+  geom_col(aes(y = total, x = etablissement_recu1))+
+  theme_minimal()+
+  scale_x_discrete(labels = seq(1,36,1))+
+  labs(x = "Health facility", 
+       y = "Deaths reported (n)")
+
+ggsave(total_deaths_graph, filename = here::here("mb_presentation","deaths_per_hf.png"),
+       dpi = 700,   width = 13.2,  height = 6.4,  units = "in")
   
+
+
+
+cowplot::plot_grid(total_deaths_graph, NULL, heatmap_hf, 
+                   nrow = 1, 
+                   rel_widths = c(1, -0.4, 1), 
+                   align = "hv", 
+                   axis = "tblr")
+
+

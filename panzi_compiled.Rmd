@@ -18,13 +18,11 @@ output:
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
 ```
+
 #  {.tabset .tabset-fade}
 
-## **Introduction** {.tabset .tabset-pills}
-
-The Democratic Republic of the Congo (DRC) is highly endemic for malaria 
-
-```{r include=FALSE}
+## **Summary** {.tabset .tabset-pills}
+```{r}
 if (!require("pacman")) install.packages("pacman")
 
 pacman::p_load(rio, 
@@ -50,6 +48,150 @@ pacman::p_install_gh("moodymudskipper/powerjoin")
 library(ggupset)
 library(Rtesunate)
 library(powerjoin)
+
+
+
+data_loc <- here::here("linelist", "LL_GPM_PANZI_23_01_2025_AS_RAJ.xlsx")
+
+data <- rio::import(data_loc) %>% 
+  Rtesunate::act_clean() %>% 
+  rename(n = 1) %>% 
+  mutate(id = row_number())
+
+lab_loc <- here::here("linelist", "lab_linelist.xlsx")
+
+lab_1 <- rio::import(lab_loc) %>% 
+  Rtesunate::act_clean() %>% 
+  select(-1) %>% 
+  filter(!is.na(id)) %>% 
+  filter(!is.na(noms))
+
+lab_2 <- rio::import(here::here("linelist", "lab_linelist.xlsx"), which = 2) %>% 
+  Rtesunate::act_clean() %>% 
+  rename(id = labid) %>% 
+  mutate(dte_de_reception = as.character(dte_de_reception)) %>% 
+  filter(!is.na(id))
+
+
+lab <- bind_rows(lab_1, lab_2) %>% 
+  filter(!is.na(noms))
+
+hf_dhis2 <- rio::import("dhis2_hf_names.xlsx") %>% 
+  mutate(hf = case_when(str_detect(`kg Panzi Zone de Santé`, "Aire") ~ NA_character_, 
+                                   .default = `kg Panzi Zone de Santé`),
+         `kg Panzi Zone de Santé` = case_when(!is.na(hf) ~ NA_character_, 
+                                              .default = `kg Panzi Zone de Santé`)
+  ) %>% 
+  fill(`kg Panzi Zone de Santé`, .direction = "down") %>% 
+  filter(!is.na(hf))
+
+hf_dhis2 %>% 
+  Rtesunate::act_clean() %>% 
+  rio::export(file = "hf_dhis2_usable.xlsx")
+
+
+line_name <- word(data_loc, -1, sep = "/")  
+line_last <- as.character(max(data$date_de_notification))
+line_first <- as.character(min(data$date_de_notification))
+
+
+lab_name <- word(lab_loc, -1, sep = "/") 
+lab_last <- as.character(max(lab$date_de_prelevement, na.rm = TRUE))
+lab_first <- as.character(min(lab$date_de_prelevement, na.rm = TRUE))
+
+theme <- ggplot2::theme_minimal()
+ggplot2::theme_set(theme)
+
+color3 <- c( "firebrick4", "cadetblue4", "white")
+
+routine_case_a <- rio::import(here("routine_data", "cas_confirme_02_27_25.xlsx"))
+routine_case_a1 <- routine_case_a %>% 
+  pivot_longer(-c(1,2)) %>% 
+  mutate(month_name = word(name, 1, sep = " "),
+         month_num = factor(case_when(month_name == "Janvier" ~ "1", 
+                           month_name == "Février" ~ "2",
+                           month_name == "Mars"  ~ "3", 
+                           month_name == "Avril"  ~ "4",
+                           month_name == "Mai"  ~ "5", 
+                           month_name == "Juin"  ~ "6",
+                           month_name == "Juillet"  ~ "7", 
+                           month_name == "Août"  ~ "8",
+                           month_name == "Septembre"  ~ "9", 
+                           month_name == "Octobre"  ~ "10",
+                           month_name == "Novembre"  ~ "11", 
+                           month_name == "Décembre" ~ "12"), 
+                        levels = map(seq(1,12,1), ~as.character(.x))), 
+         year = as.numeric(word(name, 2, sep = " "))) %>% 
+  arrange(year, month_num) 
+
+routine_first <- slice_head(routine_case_a1, n = 1) %>% 
+  pull(name)
+
+routine_last <- slice_tail(routine_case_a1, n = 1) %>% 
+  pull(name)
+
+
+case_name <- word(here("routine_data", "cas_confirme_02_27_25.xlsx"), -1, sep = "/")
+
+data_tab <- tibble(`Data set` = c("Epidemiological line list", 
+                                  "Laboratory line list", 
+                                  "Confirmed malairia cases--DHIS2"), 
+                   `File name` = c(line_name, lab_name, 
+                                   case_name), 
+                   `Earliest observation` = c(line_first, lab_first, 
+                                              routine_first), 
+                   `Most recent observation` = c(line_last, lab_last, 
+                                                 routine_last), 
+                   `Number observations` = c(nrow(data), nrow(lab), 
+                                             nrow(routine_case_a1))) %>% 
+  flextable::flextable() %>% 
+  flextable::autofit()
+
+```
+
+Data availability and quality limits the conclusions that can be drawn from 
+these analyses. Basic characteristics of data analyzed are provided in the table
+below.
+
+
+
+```{r echo = FALSE}
+
+data_tab
+
+```
+
+
+
+## **Introduction** 
+
+In November 2024, reports of an unknown illness in Panzi, a health zone in the 
+Democratic Republic of the Congo (DRC), including an alarming number of deaths 
+concentrated in children under five, raised global alerts. Given the high 
+mortality rate of the outbreak and the country’s history with outbreaks of 
+highly pathogenic diseases such as Ebola, an emergency response was established 
+to further investigate this outbreak and mitigate its impact. Rather than a 
+novel pathogen, the outbreak was linked to malaria, along with other potential 
+contributors, including malnutrition and respiratory infections. 
+
+In early January 2025, CDC’s malaria subject-matter experts arrived in country 
+to assist the Ministry of Health with the analysis of data to inform ongoing 
+response activities to prevent further spread and death attributed to the 
+outbreak.
+
+DRC is highly endemic for malaria, nationally accounting for the
+second greatest number of estimated cases in Africa in 2023 per the
+World Malaria Report. All residents are considered at risk for malaria
+infection; though incidence is more seasonal in some areas than others, no 
+portion of the country is spared. Modeled 2022 _Plasmodium falciparum_ (Pf) 
+incidence estimates from the [Malaria Atlas Project](https://malariaatlas.org/) 
+and Pf prevalence estimates in children under five years from the 
+[2023 Demographic and Health Survey](https://dhsprogram.com/methodology/survey/survey-display-597.cfm) 
+are provided below. A mask illustrating the location of Panzi is may be added or 
+removed. The blue icon denotes the location of the capital city of Kinshasa.
+
+
+```{r include=FALSE}
 
 
 pf_inc22 <- raster(here("202406_Global_Pf_Incidence_Rate_COD_2022.tiff"))
@@ -95,11 +237,47 @@ health_area <- geo_codes_dhis2 %>%
 fs <- geo_codes_dhis2 %>% 
   sf::st_drop_geometry() %>% 
   filter(parentName %in% health_area$name) %>% 
+  mutate(highlight = case_when(name %in% c("kg Panzi Hôpital Général de Référence",
+                                           "kg Kabeya Mbamba Centre de Santé", 
+                                           "kg Mwini Ngulu Centre de Santé") ~ "color", 
+                               .default = "non")) %>% 
+  sf::st_as_sf()
+
+fs1 <- geo_codes_dhis2 %>% 
+  sf::st_drop_geometry() %>% 
+  filter(parentName %in% health_area$name) %>%
+  filter(name %in% c("kg Panzi Hôpital Général de Référence",
+                                           "kg Kabeya Mbamba Centre de Santé", 
+                                           "kg Mwini Ngulu Centre de Santé")) %>% 
   sf::st_as_sf()
 
 
 
-pal1 <- colorFactor(c(ochRe::ochre_palettes[["nolan_ned"]][[4]], 
+a <- tm_shape(zds)+
+  tm_borders()+
+  tm_shape(fs)+
+  tm_dots(col = "highlight", 
+          palette = c("firebrick4", "cadetblue4"), 
+          size = 0.8)+
+  tm_text("name")+
+  tm_layout(frame = FALSE, 
+            legend.show = FALSE)
+
+a <- tm_shape(zds)+
+  tm_borders()+
+  tm_shape(fs1)+
+  tm_dots()+
+  tm_text("name")+
+  tm_layout(frame = FALSE, 
+            legend.show = FALSE)
+
+tmap_save(tm = a, filename = here::here("mb_presentation", "hf_map.png"), 
+          dpi = 700, 
+          width = 6, 
+          height = 4, units = "in")
+
+
+al1 <- colorFactor(c(ochRe::ochre_palettes[["nolan_ned"]][[4]], 
                       ochRe::ochre_palettes[["nolan_ned"]][[5]]), domain = c(1, 2))
 
 
@@ -159,72 +337,17 @@ leaflet::leaflet() %>%
 
 ## **Data cleaning** {.tabset .tabset-pills}
 
-
-```{r}
-
-
-
-data_loc <- here::here("linelist", "LL_GPM_PANZI_23_01_2025_AS_RAJ.xlsx")
-
-data <- rio::import(data_loc) %>% 
-  Rtesunate::act_clean() %>% 
-  rename(n = 1) %>% 
-  mutate(id = row_number())
-
-lab_loc <- here::here("linelist", "lab_linelist.xlsx")
-
-lab_1 <- rio::import(lab_loc) %>% 
-  Rtesunate::act_clean() %>% 
-  select(-1) %>% 
-  filter(!is.na(id)) %>% 
-  filter(!is.na(noms))
-
-lab_2 <- rio::import(here::here("linelist", "lab_linelist.xlsx"), which = 2) %>% 
-  Rtesunate::act_clean() %>% 
-  rename(id = labid) %>% 
-  mutate(dte_de_reception = as.character(dte_de_reception)) %>% 
-  filter(!is.na(id))
-
-
-lab <- bind_rows(lab_1, lab_2) %>% 
-  filter(!is.na(noms))
-
-hf_dhis2 <- rio::import("dhis2_hf_names.xlsx") %>% 
-  mutate(hf = case_when(str_detect(`kg Panzi Zone de Santé`, "Aire") ~ NA_character_, 
-                                   .default = `kg Panzi Zone de Santé`),
-         `kg Panzi Zone de Santé` = case_when(!is.na(hf) ~ NA_character_, 
-                                              .default = `kg Panzi Zone de Santé`)
-  ) %>% 
-  fill(`kg Panzi Zone de Santé`, .direction = "down") %>% 
-  filter(!is.na(hf))
-
-hf_dhis2 %>% 
-  Rtesunate::act_clean() %>% 
-  rio::export(file = "hf_dhis2_usable.xlsx")
-
-
-line_name <- word(data_loc, -1, sep = "/")  
-line_last <- max(data$date_de_notification)
-
-lab_name <- word(lab_loc, -1, sep = "/") 
-lab_last <- max(lab$date_de_prelevement, na.rm = TRUE)
-
-theme <- ggplot2::theme_minimal()
-ggplot2::theme_set(theme)
-
-color3 <- c( "firebrick4", "cadetblue4", "white")
-
-```
-
 Line list data (file name _`r line_name`_) contains `r nrow(data)` observations, 
 the most recent of which is dated `r line_last`.
 
 Lab data (file name _`r lab_name`_) contains `r nrow(lab)` observations, 
 the most recent of which is dated `r lab_last`.
 
+
 ### Data missingness
 The number of missing observations for each variable are noted below. 
 Note variables are listed in snakecase.
+
 ```{r}
 
 b <- map(names(data), 
@@ -2117,7 +2240,7 @@ data_6 <- data5_a %>%
          date_de_notification,
          date_debut_des_signes,
          date_de_consultation,
-         as, #= as.x,
+         as = as.x,
          village_quartier,
          etablissement_recu, 
          fievre, 
@@ -2950,6 +3073,16 @@ map <- data_6 %>%
   split(.$year_week_factor) %>% 
   map(~.x %>% 
         sf::st_as_sf())
+
+make_tab <- function(isl) {         # function to make the tabs
+  cat("::: {.panel}\n")             # Open tab
+  cat("##", isl, "{.panel-name}\n") # Label tab
+  p <- plot_penguins(isl)           # Create plot
+  print(p)                          # Display plot
+  cat("\n")                         # Space
+  cat(":::\n")                      # Close tab
+}
+
   
 a <- map(map, function(x) 
 leaflet::leaflet(map[[1]]) %>% 
@@ -2989,7 +3122,8 @@ leaflet::leaflet(map[[1]]) %>%
 
 ##### Cases reported in routine
 ```{r}
-routine_case <- rio::import(here("routine_data", "cas_confirme_02_27_25.xlsx")) %>% 
+
+routine_case <- routine_case_a %>% 
   pivot_longer(-c(1,2)) %>% 
   rename(hf = organisationunitname) %>% 
   mutate(month = word(name, 1, sep = " "), 
@@ -3608,9 +3742,10 @@ ts <- routine_data_panzi_out %>%
   select(-c(name, month, year, ge_et_tdr_pos, tot, equal)) %>% 
   pivot_longer(cols = c(2:6))
 
+#test <- filter(ts, hf == "kg Panzi Hôpital Général de Référence", name == "ge_pos")
 
-
-ts_list <- map(unique(ts$name), 
+ts_list <- map(list("hf_rdt_5plus","hf_rdt_cu5",
+                    "comm_cu_5_tdr", "comm_5_plus_tdr"), 
                ~ts %>% 
                  filter(name == .x) %>% 
                  split(.$hf) %>% 
@@ -3618,7 +3753,14 @@ ts_list <- map(unique(ts$name),
                        imputeTS::na_seadec()) %>% 
                  list_rbind() %>% 
                  pivot_wider(names_from = "name", 
-                             values_from = "value")) %>% 
+                             values_from = "value"))
+
+ts_list_1 <- ts %>% 
+  filter(name == "ge_pos") %>% 
+  pivot_wider(names_from = "name", 
+                             values_from = "value")
+
+ts_list <- append(ts_list, list(ts_list_1)) %>% 
   set_names(unique(ts$name)) %>% 
   reduce(~left_join(.x,.y, by = c("hf", "month_year"))) %>% 
   mutate(across(c(3:7), ~replace_na(.x, 0)), 
@@ -3757,11 +3899,13 @@ impute_label <- routine_data_panzi_out %>%
          comm_cu_5_tdr = case_when(is.na(comm_cu_5_tdr) & str_detect(method, "community") ~ "§", 
                                   .default = NA_character_),
          comm_5_plus_tdr = case_when(is.na(comm_5_plus_tdr) & str_detect(method, "community") ~ "¶", 
-                                  .default = NA_character_),
-         ge_pos = case_when(is.na(ge_pos) & str_detect(method, "smear")  ~ "#", 
-                                  .default = NA_character_)) %>% 
+                                  .default = NA_character_)
+      #   ge_pos = case_when(is.na(ge_pos) & str_detect(method, "smear")  ~ "#", 
+      #                            .default = NA_character_)
+      ) %>% 
   rowwise() %>% 
-  mutate(impute = paste(na.omit(unlist(list(list(hf_rdt_cu5, hf_rdt_5plus, comm_cu_5_tdr, comm_5_plus_tdr, ge_pos)))),
+  mutate(impute = paste(na.omit(unlist(list(list(hf_rdt_cu5, hf_rdt_5plus, comm_cu_5_tdr, comm_5_plus_tdr#, ge_pos
+                                                 )))),
                        collapse = ", ")
                      ) %>% 
   select(hf, month, year, impute)
@@ -3819,7 +3963,8 @@ tests_farr <- routine_tests_performed_panzi %>%
 
 
 
-tests_list <- map(unique(tests_farr$name), 
+tests_list <- map(list("hf_rdt_5plus","hf_rdt_cu5",
+                    "comm_cu_5_tdr", "comm_5_plus_tdr"), 
                ~tests_farr %>% 
                  filter(name == .x) %>% 
                  split(.$hf) %>% 
@@ -3827,8 +3972,20 @@ tests_list <- map(unique(tests_farr$name),
                        imputeTS::na_seadec()) %>% 
                  list_rbind() %>% 
                  pivot_wider(names_from = "name", 
-                             values_from = "value")) %>% 
-  set_names(unique(tests_farr$name)) %>% 
+                             values_from = "value")) 
+
+
+tests_list_1 <- tests_farr %>% 
+  filter(name == "smear") %>% 
+  pivot_wider(names_from = "name", 
+                             values_from = "value")
+
+tests_list <- append(tests_list, list(tests_list_1)) %>% 
+#  reduce(~left_join(.x,.y, by = c("hf", "month_year"))) %>% 
+##  mutate(across(c(3:7), ~replace_na(.x, 0)), 
+#         total = rowSums(select(., c(3:7)), na.rm = TRUE))%>% 
+  set_names(list("hf_rdt_5plus","hf_rdt_cu5",
+                    "comm_cu_5_tdr", "comm_5_plus_tdr", "smear")) %>% 
   reduce(~left_join(.x,.y, by = c("hf", "month_year"))) %>% 
   mutate(across(c(3:7), ~replace_na(.x, 0)), 
          total = rowSums(select(., c(3:7)), na.rm = TRUE))
@@ -3866,11 +4023,13 @@ impute_label_test <- routine_tests_performed_panzi %>%
          comm_cu_5_tdr = case_when(is.na(comm_cu_5_tdr) & str_detect(method, "community") ~ "§", 
                                   .default = NA_character_),
          comm_5_plus_tdr = case_when(is.na(comm_5_plus_tdr) & str_detect(method, "community") ~ "¶", 
-                                  .default = NA_character_),
-         smear = case_when(is.na(smear) & str_detect(method, "smear")  ~ "#", 
-                                  .default = NA_character_)) %>% 
+                                  .default = NA_character_)#,
+         #smear = case_when(is.na(smear) & str_detect(method, "smear")  ~ "#", 
+        #                          .default = NA_character_)
+         ) %>% 
   rowwise() %>% 
-  mutate(impute = paste(na.omit(unlist(list(list(hf_rdt_cu5, hf_rdt_5plus, comm_cu_5_tdr, comm_5_plus_tdr, smear)))),
+  mutate(impute = paste(na.omit(unlist(list(list(hf_rdt_cu5, hf_rdt_5plus, comm_cu_5_tdr, comm_5_plus_tdr#, smear
+                                                 )))),
                        collapse = ", ")
                      ) %>% 
   select(hf, month, year, impute)
@@ -3955,6 +4114,56 @@ b_list_new <- b %>%
 
 
 hf_names <- map(names(a_new_list),~str_remove_all(.x, "kg "))
+
+
+
+
+graphs <- pmap(list(a_new_list, hf_names),
+       function(x,y){ top <- x %>% 
+        ggplot()+
+        geom_col(aes(x = year_month, y = value, fill = outbreak, group = name), 
+                 color = "black", 
+                 position = position_dodge2(reverse = TRUE))+
+        scale_fill_identity()+
+        scale_x_discrete(labels = x_axis)+
+        geom_line(aes(x = year_month, y = threshold, group = 1), 
+                  color = "grey35", 
+                  linetype = "dotdash", 
+                  linewidth = 1.5)+
+        geom_text(aes(x = year_month, y = 0, label = impute), 
+                  angle = 90, 
+                  hjust = 0)+
+        theme_minimal()+
+        theme(legend.position = "none")+
+        labs(y = "Reported Cases", 
+             x = "Month", 
+             title = y) 
+            # subtitle = z)
+       return(top)
+       }
+  )
+
+filename <- map(hf_names, 
+                ~.x %>% 
+                  str_remove_all(" Poste de Santé|Poste de Santé| Hôpital Général de Référence| Centre de Santé| de Référence") %>% 
+                  str_replace_all(" ", "_") %>% 
+                  str_to_lower()
+) %>% 
+  map(~paste0(here::here("mb_presentation", "facility_output"), "/", .x, ".png"))
+
+walk2(filename, graphs, 
+      ~ggsave(filename = .x, 
+              plot = .y, 
+              dpi = 700, 
+              width = 13.2, 
+              height = 6.4, 
+              units = "in") ) 
+
+
+
+
+
+
 
 graphs <- pmap(list(a_new_list, hf_names, b_list_new),
        function(x,y,z){ top <- x %>% 
