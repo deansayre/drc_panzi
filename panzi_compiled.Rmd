@@ -2814,12 +2814,11 @@ sexe_dist_dl
 
 ```
 
-### Location
+## **Location**
 
-#### Cases by village
+### Cases by village
 
 ```{r}
-#unique(data_6$decede_non)
 
 hist <- data_6 %>% 
   group_by(village_quartier) %>% 
@@ -3001,6 +3000,234 @@ temp1
 
 ```
 
+##### Map of cases by Week {.tabset .tabset-pills}
+
+```{r out.width= 700, out.height = 700}
+
+fs1 <- fs %>% 
+  mutate(type = case_when(str_detect(name, "Centre de Santé de Référence") ~ "csr", 
+                          str_detect(name, "Centre de Santé") ~ "cs", 
+                          str_detect(name, "Poste de Santé") ~ "ps", 
+                          str_detect(name, "Hôpital Général de Référence") ~ "hgr", 
+                          .default = NA),
+         name_match = str_remove_all(name, "kg | Poste de Santé|Poste de Santé| Centre de Santé| Hôpital Général de Référence| de Référence"), 
+         name_match = str_to_lower(str_replace_all(name_match, c(" " = "_", 
+                                                                 " / " = "_", 
+                                                                 "/" = "_"))),
+         name_match = case_when(name_match == "kambandambi" ~ "kamba_ndambi", 
+                                name_match == "kiala_kamba" ~ "kiala_nkamba", 
+                                name_match == "panzi___makita" ~ "makitapanzi", 
+                                name_match == "tsakala_panzi" ~ "tshakala_panzi", 
+                                name_match == "kambandambi" ~ "kamba_ndambi", 
+                                .default = name_match), 
+         name_match = paste0(type, "_", name_match)
+  )
+
+map_a <- data_6 %>% 
+  group_by(etablissement_recu, year_week_factor) %>% 
+  summarise(num = n(), 
+            deaths = sum(decede_non == "decede", na.rm = TRUE)) %>% 
+  left_join(fs1, by = c("etablissement_recu" = "name_match")) %>% 
+  ungroup() %>% 
+  group_by(etablissement_recu) %>% 
+  mutate(cum_cases = cumsum(num), 
+         cum_deaths = cumsum(deaths))
+
+
+test <- janitor::get_dupes(map_a, etablissement_recu, year_week_factor)
+
+empty_geo_coord <- map_a %>% 
+  filter(is.na(level)) %>% 
+  filter(!etablissement_recu %in% test$etablissement_recu)
+
+keep <- st_intersection(sf::st_as_sf(map_a), sf::st_as_sf(zds))
+
+test <- janitor::get_dupes(keep, etablissement_recu, year_week_factor)
+
+  
+map <- keep %>%   
+  split(.$year_week_factor) %>% 
+  map(~.x %>% 
+        sf::st_as_sf())
+
+
+#### make tabs by week to show both cases and deaths
+
+weekly_map <- function(x){
+
+  out <- leaflet::leaflet(x) %>% 
+   addProviderTiles(providers$Esri.WorldGrayCanvas) %>% 
+   addCircleMarkers(radius = ~sqrt(num),
+                    color = "#1e5597",
+                    fill = TRUE,
+                    fillOpacity = 0.5, 
+                    group = "Weekly Cases") %>% 
+   addCircleMarkers(radius = ~sqrt(cum_cases),
+                    color = "#1e5597",
+                    fill = TRUE,
+                    fillOpacity = 0.5, 
+                    group = "Cumulative Cases") %>% 
+   addCircleMarkers(radius = ~sqrt(deaths),
+                    color = "#972b1e",
+                    stroke = FALSE, fillOpacity = 0.5, 
+                    group = "Weekly Deaths") %>% 
+   addCircleMarkers(radius = ~sqrt(cum_deaths),
+                    color = "#972b1e",
+                    stroke = FALSE, fillOpacity = 0.5, 
+                    group = "Cumulative Deaths") %>%    
+   addPolygons(
+    data = sf::st_as_sf(zds),  fillOpacity = 0, smoothFactor = 0.5,
+    color = "black", opacity = 1, weight = 0.8) %>% 
+    addLayersControl(baseGroups = c("Weekly Cases",
+                                    "Cumulative Cases",
+                                    "Weekly Deaths",
+                                    "Cumulative Deaths"),
+                     options = layersControlOptions(collapsed = F))
+  
+  return(out)
+}
+
+too_many_maps <- map(map, ~weekly_map(.x))
+
+
+#  make_tab <- function(map, name) {         # function to make the tabs
+#    cat("::: {.panel}\n")              # Open tab
+#    cat("##", name, "{.panel-name}\n") # Label tab
+#  
+#    map                                # Display plot
+#    
+#    cat("\n")                          # Space
+#    cat(":::\n")                       # Close tab
+#  }
+#  
+#  walk2(too_many_maps, names(too_many_maps), ~make_tab(.x, .y))
+#    
+
+names(too_many_maps)
+
+```
+
+###### 2024 W43
+
+```{r out.width= 700, out.height = 700}
+
+too_many_maps[[1]]
+
+```
+
+###### 2024 W44
+
+```{r out.width= 700, out.height = 700}
+
+too_many_maps[[2]]
+
+```
+
+###### 2024 W45
+
+```{r out.width= 700, out.height = 700}
+
+too_many_maps[[3]]
+
+```
+
+###### 2024 W46
+
+```{r out.width= 700, out.height = 700}
+
+too_many_maps[[4]]
+
+```
+
+###### 2024 W47
+
+```{r out.width= 700, out.height = 700}
+
+too_many_maps[[5]]
+
+```
+
+###### 2024 W48
+
+```{r out.width= 700, out.height = 700}
+
+too_many_maps[[6]]
+
+```
+
+###### 2024 W49
+
+```{r out.width= 700, out.height = 700}
+
+too_many_maps[[7]]
+
+```
+
+###### 2024 W50
+
+```{r out.width= 700, out.height = 700}
+
+too_many_maps[[8]]
+
+```
+
+###### 2024 W51
+
+```{r out.width= 700, out.height = 700}
+
+too_many_maps[[9]]
+
+```
+
+###### 2024 W52
+
+```{r out.width= 700, out.height = 700}
+
+too_many_maps[[10]]
+
+```
+
+###### 2025 W01
+
+```{r out.width= 700, out.height = 700}
+
+too_many_maps[[11]]
+
+```
+
+###### 2025 W02
+
+```{r out.width= 700, out.height = 700}
+
+too_many_maps[[12]]
+
+```
+
+###### 2025 W03
+
+```{r out.width= 700, out.height = 700}
+
+too_many_maps[[13]]
+
+```
+
+###### 2025 W04
+```{r out.width= 700, out.height = 700}
+
+too_many_maps[[14]]
+
+```
+
+```{r echo = FALSE, include = FALSE}
+
+rm(too_many_maps)
+
+```
+
+
+
+##### Cases by HF Table
+
 ```{r out.width= 700, out.height = 700}
 
 case_loc_a <- data5_a %>% 
@@ -3068,155 +3295,7 @@ case_loc %>%
 
 ```
 
-##### Mapping the outbreak over time
 
-```{r}
-
-fs1 <- fs %>% 
-  mutate(type = case_when(str_detect(name, "Centre de Santé de Référence") ~ "csr", 
-                          str_detect(name, "Centre de Santé") ~ "cs", 
-                          str_detect(name, "Poste de Santé") ~ "ps", 
-                          str_detect(name, "Hôpital Général de Référence") ~ "hgr", 
-                          .default = NA),
-         name_match = str_remove_all(name, "kg | Poste de Santé|Poste de Santé| Centre de Santé| Hôpital Général de Référence| de Référence"), 
-         name_match = str_to_lower(str_replace_all(name_match, c(" " = "_", 
-                                                                 " / " = "_", 
-                                                                 "/" = "_"))),
-         name_match = case_when(name_match == "kambandambi" ~ "kamba_ndambi", 
-                                name_match == "kiala_kamba" ~ "kiala_nkamba", 
-                                name_match == "panzi___makita" ~ "makitapanzi", 
-                                name_match == "tsakala_panzi" ~ "tshakala_panzi", 
-                                name_match == "kambandambi" ~ "kamba_ndambi", 
-                                .default = name_match), 
-         name_match = paste0(type, "_", name_match)
-  )
-
-map_a <- data_6 %>% 
-  group_by(etablissement_recu, year_week_factor) %>% 
-  summarise(num = n(), 
-            deaths = sum(decede_non == "decede", na.rm = TRUE)) %>% 
-  left_join(fs1, by = c("etablissement_recu" = "name_match"))
-
-
-test <- janitor::get_dupes(map_a, etablissement_recu, year_week_factor)
-
-empty_geo_coord <- map_a %>% 
-  filter(is.na(level)) %>% 
-  filter(!etablissement_recu %in% test$etablissement_recu)
-
-keep <- st_intersection(sf::st_as_sf(map_a), sf::st_as_sf(zds))
-
-test <- janitor::get_dupes(keep, etablissement_recu, year_week_factor)
-
-  
-map <- keep %>%   
-  split(.$year_week_factor) %>% 
-  map(~.x %>% 
-        sf::st_as_sf())
-
-test <- map[[1]]
-
-
-#### make tabs by week to show both cases and deaths
-
-weekly_map <- function(x, db){
-  maxes <- db %>% 
-    summarise(cases = max(num, na.rm = TRUE), 
-              deaths = max(deaths, na.rm = TRUE))
-  
-  max_case <- maxes %>% 
-    pull(cases)
-  
-  max_deaths <- maxes %>% 
-    pull(deaths)
-  
-  out <- leaflet::leaflet(x) %>% 
-   addProviderTiles(providers$Esri.WorldGrayCanvas) %>% 
-   addCircleMarkers(radius = ~sqrt(num),
-                    color = "cadetblue4",
-                    stroke = FALSE, fillOpacity = 0.5, 
-                    group = "Reported Cases") %>% 
-   addCircleMarkers(radius = ~sqrt(deaths),
-                    color = "firebrick4",
-                    stroke = FALSE, fillOpacity = 0.5, 
-                    group = "Reported Deaths") %>% 
-   addPolygons(
-    data = zds, 
-    stroke = TRUE, fillColor = "azure4", fillOpacity = 0.8, smoothFactor = 0.5,
-    color = "black", opacity = 1, weight = 0.8, 
-    options = pathOptions(pane = "top"),) %>% 
-  addPolygons(
-    data = drc_sf, 
-    stroke = TRUE, fillOpacity = 0, smoothFactor = 0.5,
-    color = "black", opacity = 1, weight = 2) %>% 
-    addLayersControl(baseGroups = c("Reported Cases",
-                                    "Reported Deaths"),
-               options = layersControlOptions(collapsed = F))
-}
-
-
-leaflet::leaflet(map[["2024 W50"]]) %>% 
-   addProviderTiles(providers$Esri.WorldGrayCanvas) %>% 
-   addCircleMarkers(radius = ~sqrt(num),
-                    color = "#1e5597",
-                    fill = TRUE,
-                    fillOpacity = 0.5, 
-                    group = "Reported Cases") %>% 
-   addCircleMarkers(radius = ~sqrt(deaths),
-                    color = "#972b1e",
-                    stroke = FALSE, fillOpacity = 0.5, 
-                    group = "Reported Deaths") %>% 
-   addPolygons(
-    data = sf::st_as_sf(zds),  fillOpacity = 0, smoothFactor = 0.5,
-    color = "black", opacity = 1, weight = 0.8) %>% 
-    addLayersControl(baseGroups = c("Reported Cases",
-                                    "Reported Deaths"),
-                     options = layersControlOptions(collapsed = F))
-
-
-
-make_tab <- function(isl) {         # function to make the tabs
-  cat("::: {.panel}\n")             # Open tab
-  cat("##", isl, "{.panel-name}\n") # Label tab
-  p <- weekly_map(x,db)             # Create plot
-  p                                 # Display plot
-  cat("\n")                         # Space
-  cat(":::\n")                      # Close tab
-}
-
-  
-a <- map(map, function(x) 
-leaflet::leaflet(map[[1]]) %>% 
-   addProviderTiles(providers$Esri.WorldGrayCanvas) %>% 
-  addMapPane("base", zIndex = 410) %>% 
-  addMapPane("top", zIndex = 420) %>% 
-  addCircleMarkers( ~rescale(num, c(1,10)),
-    stroke = FALSE, fillOpacity = 0.5) %>% 
-  addPolygons(
-    data = drc_prov, 
-    stroke = TRUE,
-    fillColor = ~pal(prev), fillOpacity = 1, smoothFactor = 0.5,
-    color = "black", opacity = 1, weight = 0.5, 
-    options = pathOptions(pane = "base"),
-    group = "Prevalance (RDT) DHS 2023") %>% 
-  addPolygons(
-    data = sf::st_as_sf(zds_, 
-    stroke = TRUE, fillColor = "azure4", fillOpacity = 0.8, smoothFactor = 0.5,
-    color = "black", opacity = 1, weight = 0.8, 
-    options = pathOptions(pane = "top"),
-    group = "Panzi Health Zone") %>% 
-  addPolygons(
-    data = drc_sf, 
-    stroke = TRUE, fillOpacity = 0, smoothFactor = 0.5,
-    color = "black", opacity = 1, weight = 2) %>% 
-  addMarkers(data = kin) %>% 
-    addLayersControl(baseGroups = c("MAP Incidence 2021",
-                                    "Prevalance (RDT) DHS 2023"),
-                       overlayGroups = "Panzi Health Zone Mask", 
-               options = layersControlOptions(collapsed = F))
-)
-
-```
 
 ##### Cases reported in routine
 
@@ -4326,6 +4405,8 @@ walk2(filename, graphs,
 
 ```
 
+
+
 ```{r}
 
 tpr_impute <- a_new_2 %>% 
@@ -4375,6 +4456,9 @@ tpr_impute_graph[[3]]
 
 ```
 
+
+##### Waffles
+
 ```{r}
 
 
@@ -4410,12 +4494,13 @@ waffle_deaths <- waffle %>%
         )
   )
 
+
 waffle_graphs <- map2(waffle_counts, waffle_deaths,
     function(x,y){
 top <- x %>% 
 ggplot(aes(fill = waffle_cat, values = count)) +
   geom_waffle(color = "white", size = .25, n_rows = 5, flip = TRUE) +
-  facet_wrap(~year_week_factor, nrow = 1, strip.position = "bottom", drop = FALSE) +
+  facet_wrap(~year_week_factor, nrow = 1, strip.position = "top", drop = FALSE) +
   scale_x_discrete(drop = FALSE) + 
   scale_y_continuous(labels = function(x) x * 5, # make this multiplyer the same as n_rows
                      expand = c(0,0))+
@@ -4424,7 +4509,8 @@ ggplot(aes(fill = waffle_cat, values = count)) +
   theme_minimal()+
   theme(
     axis.title = element_blank(),
-    axis.text.x = element_text(size=8),
+    axis.text.x = element_blank(),
+    strip.text.x = element_text(size=8),
     axis.text.y = element_text(size=8),
   # Legend
   legend.position = "top",
@@ -4456,7 +4542,7 @@ if(all(is.na(y$waffle_cat))){bottom <-cowplot::ggdraw()+
    theme_void()+
    theme(
      axis.title = element_blank(),
-     axis.text.x = element_text(size=8),
+     strip.text.x = element_text(size = 8),
      axis.text.y=element_blank(),
      axis.ticks.y=element_blank(),
    # Legend
@@ -4472,14 +4558,40 @@ if(all(is.na(y$waffle_cat))){bottom <-cowplot::ggdraw()+
  
 cowplot::plot_grid(top, NULL, bottom, ncol = 1, 
                    rel_heights = c(5, -1, 2),
-                   align = "hv", axis = "tblr")
+                   align = "hv", axis = "tblr", 
+                   labels = c("Cases", NULL, "Deaths"))
 
 })
 
-waffle_graphs[[7]]
-
+waffle_graphs_new <- waffle_graphs %>% 
+  set_names(map(names(waffle_graphs), 
+                ~str_replace_all(str_to_title(str_replace_all(.x, "_", " ")), 
+                                 c("Csr" = "CSR", 
+                                   "Cs" = "CS", 
+                                   "Ps" = "PS", 
+                                   "Hgr" = "HGR"))
+                )
+                )
 
 ```
+
+
+
+```{r results='asis'}
+ make_tab <- function(graph, name) {         # function to make the tabs
+   cat("::: {.panel}\n")              # Open tab
+   cat("######", name, "{.panel-name}\n") # Label tab
+ 
+   print(graph)                                # Display plot
+   
+   cat("\n")                          # Space
+   cat(":::\n")                       # Close tab
+ }
+ 
+ walk2(waffle_graphs_new, names(waffle_graphs_new), ~make_tab(.x, .y))
+```
+
+
 
 ##### Commodities
 
