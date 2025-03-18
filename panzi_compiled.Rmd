@@ -2080,7 +2080,7 @@ symptom_combos <- list(all, missing_one, missing_both)
  
 ```
 
-There are `r sum(symptom_combos[[3]]$Count, na.rm = TRUE)` patients that
+There are `r sum(symptom_combos[[3]]$count, na.rm = TRUE)` patients that
 were listed without *either* fever or cough. Clinical presentations,
 counts, malaria RDT test positivity rate, and case fatality rates are
 listed below.
@@ -3102,8 +3102,6 @@ too_many_maps <- map(map, ~weekly_map(.x))
 #  
 #  walk2(too_many_maps, names(too_many_maps), ~make_tab(.x, .y))
 #    
-
-names(too_many_maps)
 
 ```
 
@@ -4457,31 +4455,33 @@ tpr_impute_graph[[3]]
 ```
 
 
-##### Waffles
+##### Waffles {.tabset .tabset-pills}
 
 ```{r}
 
-
+data_6 <- rio::import("data_6.xlsx")
 
 waffle <- data_6 %>% 
-  mutate(waffle_cat = case_when(tdr1 == "positif" & cough_fever != "both" ~ "#FFC051",# "Malaria only", 
+  mutate(year_week_factor1 = factor(str_replace_all(year_week_factor, "20", "'")), 
+         year_week_factor2 = fct_reorder(year_week_factor1, year_week_factor),
+    waffle_cat = case_when(tdr1 == "positif" & cough_fever != "both" ~ "#FFC051",# "Malaria only", 
                                 tdr1 == "negatif" & cough_fever == "both" ~ "#004878", #"Respiratory only", 
                                 tdr1 == "positif" & cough_fever == "both" ~ "#3B455F", #"Malaria and Respiratory", 
                                 tdr1 == "negatif" & cough_fever != "both" ~ "grey50", #"Other", 
                                 tdr1 == "unknown" ~ "#A62420", #"Malaria unknown", 
                                 .default = NA)) %>% 
  # filter(etablissement_recu == "hgr_panzi") %>% 
-  group_by(year_week_factor, waffle_cat, etablissement_recu) %>% 
+  group_by(year_week_factor2, waffle_cat, etablissement_recu) %>% 
   summarise(count = n(), 
             deaths = sum(decede_non == "decede", na.rm = TRUE)) %>% 
   ungroup()
 
-waffle_fill <- data.frame(year_week_factor = unique(waffle$year_week_factor))
+waffle_fill <- data.frame(year_week_factor2 = unique(waffle$year_week_factor2))
   
 waffle_counts <- waffle %>% 
   split(.$etablissement_recu) %>% 
   map(~.x %>% 
-        full_join(waffle_fill, by = "year_week_factor") %>% 
+        full_join(waffle_fill, by = "year_week_factor2") %>% 
         mutate(count = ifelse(is.na(count), 100, count)))
 
 waffle_deaths <- waffle %>% 
@@ -4489,7 +4489,7 @@ waffle_deaths <- waffle %>%
   full_join(data.frame(etablissement_recu = unique(waffle$etablissement_recu))) %>% 
   split(.$etablissement_recu) %>% 
   map(~.x %>% 
-        full_join(waffle_fill, by = "year_week_factor") %>% 
+        full_join(waffle_fill, by = "year_week_factor2") %>% 
         mutate(deaths = ifelse(is.na(deaths), 100, deaths)
         )
   )
@@ -4497,21 +4497,34 @@ waffle_deaths <- waffle %>%
 
 waffle_graphs <- map2(waffle_counts, waffle_deaths,
     function(x,y){
+      
+      y_breaks_counts_breaks_a <- seq(floor(min(x$count) / 5), ceiling(max(x$count) / 5), by = 1)
+      
+      y_breaks_counts_breaks <- if(length(y_breaks_counts_breaks_a) > 3){seq(floor(min(x$count) / 5), ceiling(max(x$count) / 5), by = 2)} else {
+        y_breaks_counts_breaks_a}
+      y_breaks_counts_labs <- if(length(y_breaks_counts_breaks_a) > 3){seq(floor(min(x$count) / 5) * 5, ceiling(max(x$count) / 5) * 5, by = 10)} else {
+        seq(floor(min(x$count) / 5) * 5, ceiling(max(x$count) / 5) * 5, by = 5)
+      }
+      
+
 top <- x %>% 
 ggplot(aes(fill = waffle_cat, values = count)) +
   geom_waffle(color = "white", size = .25, n_rows = 5, flip = TRUE) +
-  facet_wrap(~year_week_factor, nrow = 1, strip.position = "top", drop = FALSE) +
+  facet_wrap(~year_week_factor2, nrow = 1, strip.position = "top", drop = FALSE) +
   scale_x_discrete(drop = FALSE) + 
-  scale_y_continuous(labels = function(x) x * 5, # make this multiplyer the same as n_rows
+  scale_y_continuous(breaks = y_breaks_counts_breaks,
+                     labels =  y_breaks_counts_labs,#function(x) floor(x/5) + 5, 
                      expand = c(0,0))+
   scale_fill_identity()+
-  coord_equal()+
+  coord_fixed()+
   theme_minimal()+
   theme(
     axis.title = element_blank(),
     axis.text.x = element_blank(),
     strip.text.x = element_text(size=8),
     axis.text.y = element_text(size=8),
+    panel.grid.minor.y = element_blank(),
+
   # Legend
   legend.position = "top",
   legend.title = element_blank(),
@@ -4525,43 +4538,44 @@ ggplot(aes(fill = waffle_cat, values = count)) +
 if(all(is.na(y$waffle_cat))){bottom <-cowplot::ggdraw()+
   cowplot::draw_text("No deaths reported from this facility")} else{
     
-   y_scale <- ggplot_build(top)$layout$panel_scales_y[[1]]
-    
-    max_deaths <- max(y$deaths, na.rm = TRUE)
-    upper <- if (max_deaths/5 == floor(max_deaths/5)) {floor(max_deaths/5) + 5} else {ceiling(max_deaths/5)}
+   y_breaks_deaths_breaks_a <- seq(floor(min(x$deaths, na.rm = TRUE)/5),
+                                       ceiling(max(x$deaths, na.rm = TRUE)/5),
+                                       by = 1)
+       
+   y_breaks_deaths_breaks <- if(length(y_breaks_deaths_breaks_a) > 3){seq(floor(min(x$deaths, na.rm = TRUE) / 5), ceiling(max(x$deaths, na.rm = TRUE) / 5), by = 2)} else {
+         y_breaks_deaths_breaks_a}
+       y_breaks_deaths_labs <- if(length(y_breaks_deaths_breaks_a) >  3){seq(floor(min(x$deaths, na.rm = TRUE) / 5) * 5, ceiling(max(x$deaths, na.rm = TRUE) / 5) * 5, by = 10)} else {
+         seq(floor(min(x$deaths, na.rm = TRUE) / 5) * 5, ceiling(max(x$deaths, na.rm = TRUE) / 5) * 5, by = 5)
+       }
     
                  
                  bottom <- y %>% 
  ggplot(aes(fill = waffle_cat, values = deaths)) +
    geom_waffle(color = "white", size = .25, n_rows = 5, flip = TRUE) +
-  facet_wrap(~year_week_factor, nrow = 1, strip.position = "bottom", drop = FALSE) +
+  facet_wrap(~year_week_factor2, nrow = 1, strip.position = "bottom", drop = FALSE) +
   scale_x_discrete(drop = FALSE) + 
-#   scale_y_continuous(y_scale)+
+   scale_y_continuous(breaks = y_breaks_deaths_breaks,
+                     labels =  y_breaks_deaths_labs,
+                     expand = c(0,0))+
    scale_fill_identity()+
-   coord_equal()+
-   theme_void()+
+   coord_fixed()+
+   theme_minimal()+
    theme(
      axis.title = element_blank(),
      strip.text.x = element_text(size = 8),
-     axis.text.y=element_blank(),
-     axis.ticks.y=element_blank(),
-   # Legend
-   legend.position = "top",
-   legend.title = element_blank(),
-   legend.spacing = unit(0.5, 'cm'),
-   legend.key.height= unit(0.5, 'cm'),
-   legend.key.width= unit(0.7, 'cm'),
-   legend.text = element_text(size=8,
-                              face = 'plain',
-                              color = "grey10"))
+     panel.grid.minor.y = element_blank(),
+     axis.text.y = element_text(size=8),
+   )
 }
  
-cowplot::plot_grid(top, NULL, bottom, ncol = 1, 
-                   rel_heights = c(5, -1, 2),
+cowplot::plot_grid(top, NULL, NULL, bottom, ncol = 1, 
+                   rel_heights = c(2, -0.4, -0.4, 2),
                    align = "hv", axis = "tblr", 
-                   labels = c("Cases", NULL, "Deaths"))
+                   labels = c("Cases", "Deaths", NULL, NULL))
 
 })
+
+waffle_graphs[[2]]
 
 waffle_graphs_new <- waffle_graphs %>% 
   set_names(map(names(waffle_graphs), 
@@ -4578,6 +4592,8 @@ waffle_graphs_new <- waffle_graphs %>%
 
 
 ```{r results='asis'}
+
+
  make_tab <- function(graph, name) {         # function to make the tabs
    cat("::: {.panel}\n")              # Open tab
    cat("######", name, "{.panel-name}\n") # Label tab
@@ -4587,8 +4603,13 @@ waffle_graphs_new <- waffle_graphs %>%
    cat("\n")                          # Space
    cat(":::\n")                       # Close tab
  }
+
+
  
  walk2(waffle_graphs_new, names(waffle_graphs_new), ~make_tab(.x, .y))
+ 
+
+   
 ```
 
 
