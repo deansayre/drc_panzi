@@ -1,5 +1,6 @@
 ---
 title: "Outbreak of Febrile illness with cough and elevated case fatality rate -- Panzi Health Zone, DRC"
+author: "Drs. Dean Sayre and Osee Sanogo\nU.S. Centers for Disease Control and Prevention"
 date: "`r format(Sys.time(), '%A %d %B %Y')`"
 #runtime: shiny
 output:
@@ -80,12 +81,13 @@ lab <- bind_rows(lab_1, lab_2) %>%
   filter(!is.na(noms))
 
 hf_dhis2 <- rio::import("dhis2_hf_names.xlsx") %>% 
-  mutate(hf = case_when(str_detect(`kg Panzi Zone de Santé`, "Aire") ~ NA_character_, 
-                                   .default = `kg Panzi Zone de Santé`),
-         `kg Panzi Zone de Santé` = case_when(!is.na(hf) ~ NA_character_, 
-                                              .default = `kg Panzi Zone de Santé`)
+  rename(panzi_zds = 1) %>% 
+  mutate(hf = case_when(str_detect(panzi_zds, "Aire") ~ NA_character_, 
+                                   .default = panzi_zds),
+         panzi_zds = case_when(!is.na(hf) ~ NA_character_, 
+                                              .default = panzi_zds)
   ) %>% 
-  fill(`kg Panzi Zone de Santé`, .direction = "down") %>% 
+  fill(panzi_zds, .direction = "down") %>% 
   filter(!is.na(hf))
 
 hf_dhis2 %>% 
@@ -118,7 +120,7 @@ routine_case_a1 <- routine_case_a %>%
                            month_name == "Mai"  ~ "5", 
                            month_name == "Juin"  ~ "6",
                            month_name == "Juillet"  ~ "7", 
-                           month_name == "Août"  ~ "8",
+                           str_detect(month_name, "Ao")  ~ "8",
                            month_name == "Septembre"  ~ "9", 
                            month_name == "Octobre"  ~ "10",
                            month_name == "Novembre"  ~ "11", 
@@ -161,6 +163,76 @@ in the table below.
 data_tab
 
 ```
+
+Most individuals in the epidemiological line list exhibited both cough and fever
+and a positive RDT for malaria. Case fatality rates were highest in those 
+with a 'malaria unknown' status common in the early weeks of the event; those
+with information on malaria testing and treatment exhibited better outcomes 
+across all age groups and presenting facilities, though deaths were concentrated
+in only a subset of receiving facilities.
+
+Laboratory results for respiratory pathogens were unable to be reliably matched
+to epidemiological data to glean the impact of influenza testing on patient 
+outcomes. Clinical diagnoses provided in the epidemiological line list appeared
+inconsistent and were not used in analyses; RDT results and presentation with 
+the combination of cough and fever were used instead to denote malaria and 
+respiratory illness. Note that given the degree of malaria transmission in the 
+area, it is likely that not all those testing positive by RDT had an active
+malaria infection at the time of presentation (pfHRP2 is detectable in the blood 
+for approximately one month after clearing the infection), but additional 
+information from each patient on recently diagnosed and treated malaria 
+infections is not available.
+
+Routine data from DHIS2 demonstrated significant issues with completeness. 
+However, some facilities did report an unusually high number of confirmed 
+malaria cases during the period under investigation. Trends were examined using
+imputation for missing values and results at each facility should be 
+individually examined with care. Note that many facilities reported an elevated
+number of cases _after_ this event had brought significant attention to area, 
+likely signaling an increased testing/reporting rate rather than a true causative
+increase in transmission. Additionally, comparison of the line list to routine
+data show inconsistencies in monthly totals when both are available. This 
+underscores the incompleteness of the epidemiological line list. There are many 
+people reported with confirmed malaria that are missing from the 
+line list, and presumably even more with fever/suspected malaria that would 
+qualify based on the case definition used. This can also be seen when examining
+the geographic spread of cases on the line list; in such a highly malaria 
+endemic area, all facilities likely have individuals reporting with fever every
+week. Though expected, it is important to note as the case fatality rate is 
+based on totals from the epidemiological line list, which is almost certainly 
+inflated.
+
+Not captured in these analyses are anecdotes explaining how the event was 
+initially mistakenly flagged as an unknown illness. This 
+
+Top-line recommendations for the remainder of this event and for potential 
+similar occurrences in the future include: 
+
+* Reported data should be routinely reviewed by a data manager to assess for 
+errors so that they may be corrected in near real-time. Data cleaning after the
+fact is not able to correct issues when the logical/probable intent of the 
+data collector cannot be determined, resulting in loss of some information.
+
+* Additional data for all patients would be useful, notably linked laboratory 
+data and recent past medical history (malaria diagnosis/treatment and influenza
+or other respiratory diseases vaccination status). Clinical diagnoses in the 
+field are not reliable and diagnostic assays results linked to patient outcomes 
+may allow at-risk individuals to be targeted for additional care. A more in-depth
+investigation is needed, particularly for those patients that passed away from 
+the illness.
+
+* Ancillary information on how many teams are active in the area of interest and
+where would be helpful to interpret temporal evolution of the event. Given the
+ubiquitous presentation of the disease of interest in a highly malaria endemic
+area, the number of individuals in the epidemiological line list is likely to be
+influenced by magnitude of field efforts rather than a pure indicator of 
+outbreak evolution.
+
+* In-depth review of health facility data and case management practices at 
+targeted facilities may provide clarity on why certain facilities exhibited a 
+much higher case fatality rate than others. It also may serve as an opportunity 
+to obtain improved routine surveillance data and help answer the question of 
+whether an increased malaria transmission may have played a role. 
 
 ## **Introduction**
 
@@ -295,6 +367,61 @@ kin <- sf::st_as_sf(tibble(lat = -4.346703,
               long = 15.307295), 
               coords = c("long", "lat"), 
               crs = 4326)
+
+cheat_codes <- rio::import(here::here("routine_data", "tests_done.xlsx"))
+
+tests_done <- cheat_codes %>% 
+  distinct(dataid, dataname) %>% 
+  mutate(dataname = str_replace_all(dataname, "Ã©", "é"))
+
+commodity_codes <- rio::import(here::here("routine_data","commodity_data_labels.xlsx"))%>% 
+  mutate(dataname = str_replace_all(dataname, "Ã©", "é"))
+  
+
+dhis2_data <- tibble(data = c(rep("Confirmed Cases", 8), 
+                              rep("Tests Performed", 7), 
+                              rep("Commodities", 26)), 
+                     name = c("A 1.4 TDR positif 2 - < 5 ans",
+                              "A 1.4 TDR positif < 2 ans",
+                              "A 1.4 TDR positif <5 ans",
+                              "A 1.4 TDR positif >=5 ans",
+                              "A 1.4 TDR positif >=5 ans",
+                              "B 10.2 TDRs réalisés au SSC Dont positifs <5 ans",
+                              "B 10.2 TDRs réalisés au SSC Dont positifs >=5 ans",
+                              "D 5.3 Frottis réalisé dont Frottis positif - Examens positifs", tests_done$dataname, commodity_codes$dataname), 
+                     id = c("SpmQSLRPMl4.xxMINnPGqUg",
+                            "SpmQSLRPMl4.xCV9NGB897u",
+                            "SpmQSLRPMl4.yI0WfOFcgSc",
+                            "SpmQSLRPMl4.r5lWfJh2t2l",
+                            "SpmQSLRPMl4.brxxCYkQqcd",
+                            "IPnqGkUUN6U.yI0WfOFcgSc",
+                            "IPnqGkUUN6U.brxxCYkQqcd",
+                            "G93aSUKfKgi", 
+                            tests_done$dataid, 
+                            commodity_codes$dataid) 
+                     ) %>% 
+  flextable::flextable() %>% 
+  flextable::autofit()
+
+
+locations <- cheat_codes %>% 
+  select(c(1:3)) %>% 
+  distinct(organisationunitid,
+           organisationunitname,
+           organisationunitcode) %>% 
+  mutate(across(everything(), ~str_replace_all(.x, "Ã©", "é")), 
+         across(everything(), ~str_replace_all(.x, "Ã´", "ô"))
+  )
+
+locations_button <- locations %>% 
+ downloadthis::download_this(
+    output_name = "dhis2_locations_panzi",
+    output_extension = ".xlsx",
+    button_label = "Location information",
+    button_type = "default",
+    has_icon = TRUE,
+    icon = "fa-regular fa-arrow-down-to-line")
+
 ```
 
 ```{r out.width= 700, out.height = 700}
@@ -336,16 +463,49 @@ leaflet::leaflet() %>%
 
 ## **Data cleaning** {.tabset .tabset-pills}
 
+This tab exists to provide transparency and reproducibility of all subsequent
+analyses. None of the data provided by the DRC MOH (either the response team
+or via DHIS2) are altered without documentation here. Many changes are shown
+via downloadable Excel files. (These buttons have been disabled for partners 
+outside of the MOH that may be interested in results, but were not granted 
+direct data access.)
+
+Many portions of this tab will not be of interest unless a deeper understanding
+of how data were handled is needed.
+
+
 Line list data (file name *`r line_name`*) contains `r nrow(data)`
 observations, the most recent of which is dated `r line_last`.
 
 Lab data (file name *`r lab_name`*) contains `r nrow(lab)` observations,
 the most recent of which is dated `r lab_last`.
 
+DHIS2 data contains `r nrow(routine_case_a1)` observations, the most distant of
+which is from `r routine_first` and the most recent is from `r routine_last`. 
+
+Information on the data elements pulled from DHIS to generate aggregate 
+indicators is listed below. Identifying information for reporting 
+units/geographies is provided in the downloadable Excel file.
+
+```{r echo = FALSE}
+
+dhis2_data
+
+```
+
+
+```{r echo=FALSE}
+
+locations_button
+
+```
+
+
+
 ### Data missingness
 
-The number of missing observations for each variable are noted below.
-Note variables are listed in snakecase.
+The number of missing observations for each variable recorded in the
+epidemiological line list are presented in the downloadable Excel file below.
 
 ```{r}
 
@@ -843,7 +1003,7 @@ the data set meet the case definition.
 
 data5 <- data5_c
 symptoms <- data5 %>% 
-  select(n, 14:30) %>% 
+  select(n, 11:27) %>% 
   pivot_longer(-n) %>% 
   filter(value == "oui") %>% 
   group_by(name) %>% 
@@ -885,7 +1045,7 @@ tested for malaria).
 ```{r}
 
 symptom_combo_upset_a <- data5 %>% 
-  select(n, 14:30) %>% 
+  select(n, 11:27) %>% 
   pivot_longer(-n) %>% 
   filter(value == "oui") %>% 
   mutate(name = str_to_sentence(str_replace_all(name, "_", " "))) %>% 
@@ -1078,7 +1238,7 @@ dx_dl <- dx %>%
 
 
 dx <- data5 %>% 
-  select(n, 32:38) %>% 
+  select(n, 29:35) %>% 
   pivot_longer(-n) %>% 
   filter(value == "oui") %>% 
   group_by(name) %>% 
@@ -1338,7 +1498,7 @@ tpr_weekly %>%
 ```{r }
 palu_pos_sym <- data5_a %>% 
   filter(paludisme_1 == "oui") %>% 
-  select(n, 14:30) %>% 
+  select(n, 11:27) %>% 
   pivot_longer(-n) %>% 
   filter(value == "oui") %>% 
   group_by(name) %>% 
@@ -1348,7 +1508,7 @@ palu_pos_sym <- data5_a %>%
 
 palu_pos_tdr <- data5_a %>% 
   filter(paludisme_1 == "oui") %>% 
-  select(n, 14:30, tdr1) %>% 
+  select(n, 11:27, tdr1) %>% 
   pivot_longer(-c(n, tdr1)) %>% 
   filter(value == "oui") %>% 
   group_by(n) %>% 
@@ -1366,7 +1526,7 @@ palu_pos_tdr <- data5_a %>%
 
 palu_pos <- data5_a %>% 
   filter(paludisme_1 == "oui") %>% 
-  select(n, 14:30) %>% 
+  select(n, 11:27) %>% 
   pivot_longer(-n) %>% 
   filter(value == "oui") %>% 
   group_by(n) %>% 
@@ -1502,7 +1662,7 @@ full
 ```{r }
 palu_pos_sym <- data5_a %>% 
   filter(paludisme_1 == "non") %>% 
-  select(n, 14:30) %>% 
+  select(n, 11:27) %>% 
   pivot_longer(-n) %>% 
   filter(value == "oui") %>% 
   group_by(name) %>% 
@@ -1512,7 +1672,7 @@ palu_pos_sym <- data5_a %>%
 
 palu_pos_tdr <- data5_a %>% 
   filter(paludisme_1 == "non") %>% 
-  select(n, 14:30, tdr1) %>% 
+  select(n, 11:27, tdr1) %>% 
   pivot_longer(-c(n, tdr1)) %>% 
   filter(value == "oui") %>% 
   group_by(n) %>% 
@@ -1530,7 +1690,7 @@ palu_pos_tdr <- data5_a %>%
 
 palu_pos <- data5_a %>% 
   filter(paludisme_1 == "non") %>% 
-  select(n, 14:30) %>% 
+  select(n, 11:27) %>% 
   pivot_longer(-n) %>% 
   filter(value == "oui") %>% 
   group_by(n) %>% 
@@ -1824,183 +1984,12 @@ presumably were not tested for malaria).
 
 ![](output/diagnosis_combo_outcome.png)
 
-```{r eval = FALSE}
-
-# to delete... superfluous
-
-dx_combo_upset_a <- data5 %>% 
-  select(n, 14:30) %>% 
-  pivot_longer(-n) %>% 
-  filter(value == "oui") %>% 
-  mutate(name = str_to_sentence(str_replace_all(name, "_", " "))) %>% 
-  group_by(n) %>% 
-  summarise(list = list(name)) %>% 
-  ungroup() %>% 
-  group_by(list) %>% 
-  mutate(count = n()) %>% 
-  ungroup() %>% 
-  arrange(-count) %>% 
-  group_by(list) %>% 
-  mutate(id = cur_group_id()) %>% 
-  ungroup() %>% 
-  mutate(list_sx_1 = factor(map_chr(list, paste, collapse = ", ")),
-         list_sx_1 = fct_reorder(list_sx_1, -count)) %>% 
-  group_by(list) 
-
-  
-symptom_combo_upset <- symptom_combo_upset_a %>% 
-  filter(id <= 20)
-
-
-
-cols <-  c("fievre", "toux", "rhinorrhee", "dyspnee", 
-                       "asthenie_physique", "courbatures",
- "cephalee", "frisson", "anorexie", "vomissement", "douleurs_abdominales",
- "diarrhee",  "douleurs_generalisees",   "lombalgie",  "douleurs_au_bas_ventre", 
- "douleurs_costales", "douleurs_testiculaires")
-
-cols2 <- c("grippe", "bronchite", "ira", "syndrome_grippal",
-           "pneumonie","broncho_pneumonie")
-
-
-heatmap_dx_a <- data5 %>% 
-  select(n, cols) %>% 
-  pivot_longer(-n) %>% 
-  filter(value == "oui") %>% 
-  group_by(n) %>% 
-  mutate(name = str_to_sentence(str_replace_all(name, "_", " "))) %>% 
-  summarise(list_sx = list(name)) %>% 
-  ungroup() %>% 
-  left_join(data5, by = "n") %>% 
-  group_by(list_sx) %>% 
-  summarise(across(cols2, 
-                ~sum(.x == "oui", na.rm = TRUE)/(sum(.x == "oui", na.rm = TRUE) + 
-                                                   sum(.x == "non", na.rm = TRUE)))) %>% 
-  ungroup() %>% 
-  pivot_longer(-1)
-
-dx_single <- data5 %>% 
-  select(n, cols2) %>% 
-  pivot_longer(-n) %>% 
-  filter(value == "oui") %>% 
-  group_by(name) %>% 
-  summarise(count = n()) %>% 
-  ungroup() %>% 
-  arrange(-count)
-  
-heatmap_dx <- heatmap_dx_a  %>% 
-  mutate(list_sx_1 = factor(map_chr(list_sx, paste, collapse = ", "), 
-                          levels = unique(symptom_combo_upset_a$list_sx_1))
-         , 
-         name = factor(name, levels = rev(dx_single$name)))
-
-heatmap_dx_graph <- heatmap_dx %>% 
-  filter(list_sx_1 %in% symptom_combo_upset$list_sx_1)
-
-
-symptom_other <- symptom_combo_upset_a %>% 
-  left_join(select(data5, n, evolution, tdr), by = "n")
-
-tpr_cfr_by_presentation <- symptom_other %>% 
-  group_by(list_sx_1) %>% 
-  summarise(tpr = 100*sum(tdr == "positif", na.rm = TRUE)/(sum(tdr == "positif", na.rm = TRUE)+
-                                                         sum(tdr == "negatif", na.rm = TRUE)),
-            cfr = 100*sum(evolution == "decede", na.rm = TRUE)/sum(!is.na(evolution))
-  ) %>% 
-  ungroup() 
-
-tpr_cfr_by_presentation_strat <- symptom_other %>% 
-  group_by(list_sx_1)%>% 
-  mutate(tdr = factor(case_when(is.na(tdr) ~ "non.rensegne", 
-                         .default = tdr), 
-                      levels = c("positif", 
-                                 "negatif", 
-                                 "non.rensegne"))) %>% 
-  group_by(list_sx_1, tdr) %>% 
-  summarise(cfr = 100*sum(evolution == "decede", na.rm = TRUE)/sum(!is.na(evolution))
-  )
-
-
-
-tpr_cfr_by_presentation_graph <- tpr_cfr_by_presentation %>% 
-  filter(list_sx_1 %in% symptom_combo_upset$list_sx_1) 
-
-tpr_cfr_by_presentation_strat_graph <- tpr_cfr_by_presentation_strat %>% 
-    filter(list_sx_1 %in% symptom_combo_upset$list_sx_1) 
-
-top <- ggplot(symptom_combo_upset)+
-  geom_bar(aes(x = list))+
-  scale_x_upset(n_intersections = 20)+
-  labs(x = element_blank(), 
-       y = "Count")
-
-heat <- ggplot(heatmap_dx_graph)+
-  geom_tile(aes(x = list_sx_1, y = name, fill = value))+
-  theme(legend.position = "none",
-        axis.text.x=element_blank())+
-  labs(x = element_blank(), 
-       y = "Clinical Diagnosis")
-
-tpr_graph <- tpr_cfr_by_presentation_graph %>% 
-  ggplot()+
-  geom_col(aes(x = list_sx_1, 
-               y = tpr), color = "black")+
-  theme(axis.text.x=element_blank())+
-  labs(x = element_blank(), 
-       y = "RDT Test positivity (%)")
-
-#devtools::install_github("wilkelab/ungeviz")
-
-cfr_graph <-  ggplot()+
-  geom_col(data = tpr_cfr_by_presentation_strat_graph, aes(x = list_sx_1, 
-               y = cfr, 
-               fill = tdr, 
-               group = tdr), 
-           color = "black", 
-           position = position_dodge2(width = 0.9, preserve = "single"))+
-  scale_fill_manual(values = c("firebrick4", 
-                               "cadetblue4", 
-                               "white"))+
-  ungeviz::geom_hpline(data = tpr_cfr_by_presentation_graph, aes(x = list_sx_1, 
-               y = cfr), 
-           color = "black")+
-  theme(axis.text.x=element_blank(), 
-        legend.position = "none")+
-  labs(x = element_blank(), 
-       y = "Case Fatality Rate (%)")
-
-a <- cowplot::plot_grid(top, heat,  NULL, tpr_graph, NULL,
-                   cfr_graph, 
-                   ncol = 1, 
-                   rel_heights = c(1,1, -0.4, 1,-0.4, 1),
-                   align = "hv", 
-                   axis = "tblr")
-
-ggsave(a, filename = here::here("output", "presentation_combo_outcome.png"), 
-       dpi = 700, 
-       height = 11, 
-       width = 6, 
-       units = "in")
-
-
-```
-
-```{r eval = FALSE}
-
-## Correlation of RDT positivity and mortality by clinical presentation
-
-tpr_cfr_by_presentation_graph %>% 
-  ggplot()+
-  geom_point(aes(x = tpr, y = cfr))
-
-```
-
 #### Table of outcomes
 
 ```{r}
 
 outcome_by_presentation <- data5 %>% 
-  select(n, 14:30) %>% 
+  select(n, 11:27) %>% 
   pivot_longer(-n) %>% 
   filter(value == "oui") %>% 
   group_by(n) %>% 
@@ -2064,7 +2053,6 @@ symptom_combos <- list(all, missing_one, missing_both)
        )
  
  
- 
 ```
 
 ```{r echo = FALSE, include = FALSE}
@@ -2075,8 +2063,6 @@ symptom_combos <- list(all, missing_one, missing_both)
       function(x, y){flextable::save_as_docx(x, path = paste0(here::here("linelist", 
                                                                          "output"), "/", y, ".docx"))
       })
- 
- 
  
 ```
 
@@ -2094,7 +2080,6 @@ symptom_combos_flex[[3]]
 ### Matching lab data to line list
 
 ```{r}
-
 
 ## Merge in laboratory data
 
@@ -2613,9 +2598,7 @@ plotly::ggplotly(plot,
 
 ```
 
-#### Répartition des cas de maladies individuelles par rapport à la
-
-répartition de la population.
+#### Répartition des cas de maladies individuelles par rapport à la répartition de la population.
 
 ##### Ages
 
@@ -2657,7 +2640,7 @@ pop_sexe <- drc_pyr %>%
 prop_var <- list("age_cat3",
                  "sexe")
 
-test <- map(list(data_6, 
+test1 <- map(list(data_6, 
          mal, 
          resp, 
          resp_mal, 
@@ -2693,7 +2676,7 @@ test <- map(list(data_6,
   reduce(~left_join(.x, .y, by = c("Variable", "Groupe")))
 
 
-prop_cases <- test %>% 
+prop_cases <- test1 %>% 
   select(Variable, Groupe, starts_with("Total")) %>% 
   ungroup() %>% 
   group_by(Variable) %>% 
@@ -2814,7 +2797,7 @@ sexe_dist_dl
 
 ```
 
-## **Location**
+## **Location** {.tabset .tabset-pills}
 
 ### Cases by village
 
@@ -2860,7 +2843,7 @@ de cas (`r max(hist$count, na.rm = TRUE)`) a été signalé par
 `r max_town`. Les villages `r under_10` ont signalé moins de 10 cas, et
 `r under_1` villages n'ont signalé qu'un seul cas chacun.
 
-#### Cases by village over time
+#### Over time
 
 ```{r}
 
@@ -2916,9 +2899,9 @@ heatmap_village
 
 ```
 
-#### Cases by health facility
+### Cases by health facility
 
-##### Issues
+#### Issues
 
 ```{r }
 
@@ -3000,7 +2983,7 @@ temp1
 
 ```
 
-##### Map of cases by Week {.tabset .tabset-pills}
+#### Map of cases by Week {.tabset .tabset-pills}
 
 ```{r out.width= 700, out.height = 700}
 
@@ -3044,37 +3027,142 @@ keep <- st_intersection(sf::st_as_sf(map_a), sf::st_as_sf(zds))
 
 test <- janitor::get_dupes(keep, etablissement_recu, year_week_factor)
 
-  
+leaf_pop_1 <- sf::st_drop_geometry(keep) %>% 
+  select(etablissement_recu,year_week_factor,num,deaths, cum_cases,cum_deaths) %>% 
+  complete(etablissement_recu,year_week_factor,fill = list(num = 0,
+                                                                 deaths = 0,
+                                                                 cum_cases = 0,
+                                                                 cum_deaths = 0)) %>% 
+  left_join(select(sf::st_drop_geometry(keep), 
+                   etablissement_recu, 
+                   name)) %>% 
+  mutate(name = str_remove_all(name, "kg "))
+
+
+
+leaf_pop_cases <- leaf_pop_1 %>% 
+  split(.$name) %>% 
+  map2(names(.),
+       function(a,b){
+         top <- ggplot(a) +
+           geom_col(aes(x = year_week_factor, 
+                        y = num))+
+           theme_minimal()+
+           theme(axis.text.x = element_blank())+
+           labs(title = b, 
+                x = element_blank(), 
+                y = "Weekly Cases")
+         
+         bottom <- ggplot(a) +
+           geom_col(aes(x = year_week_factor, 
+                        y = cum_cases))+
+           theme_minimal()+
+           theme(axis.text.x = element_text(angle = 90))+
+           labs(x = "Week", 
+                y = "Cumulative Cases")
+         
+         grid <- cowplot::plot_grid(top, bottom, ncol = 1, 
+                            align = "hv", 
+                            axis = "tblr")
+         
+         return(grid)
+       }
+         )
+
+
+
+leaf_pop_deaths <- leaf_pop_1 %>% 
+  split(.$name) %>% 
+  map2(names(.),
+       function(a,b){
+         top <- ggplot(a) +
+           geom_col(aes(x = year_week_factor, 
+                        y = deaths))+
+           theme_minimal()+
+           theme(axis.text.x = element_blank())+
+           labs(title = b, 
+                x = element_blank(), 
+                y = "Weekly Deaths")
+         
+         bottom <- ggplot(a) +
+           geom_col(aes(x = year_week_factor, 
+                        y = cum_deaths))+
+           theme_minimal()+
+           theme(axis.text.x = element_text(angle = 90))+
+           labs(x = "Week", 
+                y = "Cumulative Deaths")
+         
+         grid <- cowplot::plot_grid(top, bottom, ncol = 1, 
+                            align = "hv", 
+                            axis = "tblr")
+         
+         return(grid)
+       }
+         )
+
+
+
 map <- keep %>%   
+  mutate(name = str_remove_all(name, "kg ")) %>% 
   split(.$year_week_factor) %>% 
   map(~.x %>% 
         sf::st_as_sf())
 
 
+map_names <- map %>% 
+  map(~.x %>% 
+        pull(name))
+
+map_loop_cases <- list()
+for(i in 1:length(map_names)){
+  map_loop_cases[[i]] <- keep(leaf_pop_cases,names(leaf_pop_cases) %in% map_names[[i]])
+}
+
+map_loop_deaths <- list()
+for(i in 1:length(map_names)){
+  map_loop_deaths[[i]] <- keep(leaf_pop_deaths,names(leaf_pop_deaths) %in% map_names[[i]])
+}
+
 #### make tabs by week to show both cases and deaths
+library(leafpop)
 
-weekly_map <- function(x){
+weekly_map <- function(x, y, z){
 
-  out <- leaflet::leaflet(x) %>% 
+  out <- leaflet::leaflet() %>% 
    addProviderTiles(providers$Esri.WorldGrayCanvas) %>% 
-   addCircleMarkers(radius = ~sqrt(num),
+  addMapPane("fill", zIndex = 410) %>% 
+  addMapPane("dots", zIndex = 420) %>% 
+   addCircleMarkers(data = x, 
+                    radius = ~sqrt(num),
                     color = "#1e5597",
                     fill = TRUE,
                     fillOpacity = 0.5, 
+                    options = pathOptions(pane = "dots"), 
+                    popup = leafpop::popupGraph(y),
                     group = "Weekly Cases") %>% 
-   addCircleMarkers(radius = ~sqrt(cum_cases),
+   addCircleMarkers(data = x, 
+                    radius = ~sqrt(cum_cases),
                     color = "#1e5597",
                     fill = TRUE,
                     fillOpacity = 0.5, 
+                    options = pathOptions(pane = "dots"), 
+                    popup = leafpop::popupGraph(y),
                     group = "Cumulative Cases") %>% 
-   addCircleMarkers(radius = ~sqrt(deaths),
+   addCircleMarkers(data = x, 
+                    radius = ~sqrt(deaths),
                     color = "#972b1e",
                     stroke = FALSE, fillOpacity = 0.5, 
+                    options = pathOptions(pane = "dots"), 
+                    popup = leafpop::popupGraph(z),
                     group = "Weekly Deaths") %>% 
-   addCircleMarkers(radius = ~sqrt(cum_deaths),
+   addCircleMarkers(data = x, 
+                    radius = ~sqrt(cum_deaths),
                     color = "#972b1e",
                     stroke = FALSE, fillOpacity = 0.5, 
-                    group = "Cumulative Deaths") %>%    
+                    options = pathOptions(pane = "dots"), 
+                    popup = leafpop::popupGraph(z),
+                    group = "Cumulative Deaths") %>%   
+  addPopupGraphs(list(y), group = "Weekly Cases", width = 400, height = 400) %>% 
    addPolygons(
     data = sf::st_as_sf(zds),  fillOpacity = 0, smoothFactor = 0.5,
     color = "black", opacity = 1, weight = 0.8) %>% 
@@ -3087,25 +3175,59 @@ weekly_map <- function(x){
   return(out)
 }
 
-too_many_maps <- map(map, ~weekly_map(.x))
+
+too_many_maps <- pmap(list(map, map_loop_cases, map_loop_deaths),
+                      function(x,y,z)weekly_map(x,y,z))
+
+too_many_maps[[4]]
 
 
-#  make_tab <- function(map, name) {         # function to make the tabs
-#    cat("::: {.panel}\n")              # Open tab
-#    cat("##", name, "{.panel-name}\n") # Label tab
-#  
-#    map                                # Display plot
-#    
-#    cat("\n")                          # Space
-#    cat(":::\n")                       # Close tab
-#  }
-#  
-#  walk2(too_many_maps, names(too_many_maps), ~make_tab(.x, .y))
-#    
+pop <- map_loop_cases[[1]]
+names(pop) <- NULL
 
+leaflet::leaflet() %>% 
+   addProviderTiles(providers$Esri.WorldGrayCanvas) %>% 
+  addMapPane("fill", zIndex = 410) %>% 
+  addMapPane("dots", zIndex = 420) %>% 
+     addPolygons(
+    data = sf::st_as_sf(zds),  fillOpacity = 0, smoothFactor = 0.5,
+    color = "black", opacity = 1, weight = 0.8) %>% 
+   addCircleMarkers(data = map[[1]], 
+                    radius = ~sqrt(num),
+                    color = "#1e5597",
+                    fill = TRUE,
+                    fillOpacity = 0.5, 
+                    group = "Weekly Cases", 
+                    options = pathOptions(pane = "dots"), 
+    popup = leafpop::popupGraph(pop)) %>% 
+   addCircleMarkers(data = map[[1]], 
+                    radius = ~sqrt(cum_cases),
+                    color = "#1e5597",
+                    fill = TRUE,
+                    fillOpacity = 0.5, 
+                    group = "Cumulative Cases") %>% 
+   addCircleMarkers(data = map[[1]], 
+                    radius = ~sqrt(deaths),
+                    color = "#972b1e",
+                    stroke = FALSE, fillOpacity = 0.5, 
+                    group = "Weekly Deaths") %>% 
+   addCircleMarkers(data = map[[1]], 
+                    radius = ~sqrt(cum_deaths),
+                    color = "#972b1e",
+                    stroke = FALSE, fillOpacity = 0.5, 
+                    group = "Cumulative Deaths") %>%   
+    addLayersControl(baseGroups = c("Weekly Cases",
+                                    "Cumulative Cases",
+                                    "Weekly Deaths",
+                                    "Cumulative Deaths"),
+                     options = layersControlOptions(collapsed = F))
 ```
 
-###### 2024 W43
+
+
+
+
+##### 2024 W43
 
 ```{r out.width= 700, out.height = 700}
 
@@ -3113,7 +3235,7 @@ too_many_maps[[1]]
 
 ```
 
-###### 2024 W44
+##### 2024 W44
 
 ```{r out.width= 700, out.height = 700}
 
@@ -3121,7 +3243,7 @@ too_many_maps[[2]]
 
 ```
 
-###### 2024 W45
+##### 2024 W45
 
 ```{r out.width= 700, out.height = 700}
 
@@ -3129,7 +3251,7 @@ too_many_maps[[3]]
 
 ```
 
-###### 2024 W46
+##### 2024 W46
 
 ```{r out.width= 700, out.height = 700}
 
@@ -3137,7 +3259,7 @@ too_many_maps[[4]]
 
 ```
 
-###### 2024 W47
+##### 2024 W47
 
 ```{r out.width= 700, out.height = 700}
 
@@ -3145,7 +3267,7 @@ too_many_maps[[5]]
 
 ```
 
-###### 2024 W48
+##### 2024 W48
 
 ```{r out.width= 700, out.height = 700}
 
@@ -3153,7 +3275,7 @@ too_many_maps[[6]]
 
 ```
 
-###### 2024 W49
+##### 2024 W49
 
 ```{r out.width= 700, out.height = 700}
 
@@ -3161,7 +3283,7 @@ too_many_maps[[7]]
 
 ```
 
-###### 2024 W50
+##### 2024 W50
 
 ```{r out.width= 700, out.height = 700}
 
@@ -3169,7 +3291,7 @@ too_many_maps[[8]]
 
 ```
 
-###### 2024 W51
+##### 2024 W51
 
 ```{r out.width= 700, out.height = 700}
 
@@ -3177,7 +3299,7 @@ too_many_maps[[9]]
 
 ```
 
-###### 2024 W52
+##### 2024 W52
 
 ```{r out.width= 700, out.height = 700}
 
@@ -3185,7 +3307,7 @@ too_many_maps[[10]]
 
 ```
 
-###### 2025 W01
+##### 2025 W01
 
 ```{r out.width= 700, out.height = 700}
 
@@ -3193,7 +3315,7 @@ too_many_maps[[11]]
 
 ```
 
-###### 2025 W02
+##### 2025 W02
 
 ```{r out.width= 700, out.height = 700}
 
@@ -3201,7 +3323,7 @@ too_many_maps[[12]]
 
 ```
 
-###### 2025 W03
+##### 2025 W03
 
 ```{r out.width= 700, out.height = 700}
 
@@ -3209,7 +3331,7 @@ too_many_maps[[13]]
 
 ```
 
-###### 2025 W04
+##### 2025 W04
 ```{r out.width= 700, out.height = 700}
 
 too_many_maps[[14]]
@@ -3224,7 +3346,9 @@ rm(too_many_maps)
 
 
 
-##### Cases by HF Table
+#### Cases by HF
+
+##### Table
 
 ```{r out.width= 700, out.height = 700}
 
@@ -3293,9 +3417,407 @@ case_loc %>%
 
 ```
 
+##### Epidemiological curves {.tabset .tabset-pills}
+
+```{r}
+
+data_6 <- rio::import("data_6.xlsx")
+
+waffle <- data_6 %>% 
+  mutate(year_week_factor1 = factor(str_replace_all(year_week_factor, "20", "'")), 
+         year_week_factor2 = fct_reorder(year_week_factor1, year_week_factor),
+    waffle_cat = case_when(tdr1 == "positif" & cough_fever != "both" ~ "#FFC051",# "Malaria only", 
+                                tdr1 == "negatif" & cough_fever == "both" ~ "#004878", #"Respiratory only", 
+                                tdr1 == "positif" & cough_fever == "both" ~ "#3B455F", #"Malaria and Respiratory", 
+                                tdr1 == "negatif" & cough_fever != "both" ~ "grey50", #"Other", 
+                                tdr1 == "unknown" ~ "#A62420", #"Malaria unknown", 
+                                .default = NA)) %>% 
+ # filter(etablissement_recu == "hgr_panzi") %>% 
+  group_by(year_week_factor2, waffle_cat, etablissement_recu) %>% 
+  summarise(count = n(), 
+            deaths = sum(decede_non == "decede", na.rm = TRUE)) %>% 
+  ungroup()
+
+waffle_fill <- data.frame(year_week_factor2 = unique(waffle$year_week_factor2))
+  
+waffle_counts <- waffle %>% 
+  split(.$etablissement_recu) %>% 
+  map(~.x %>% 
+        full_join(waffle_fill, by = "year_week_factor2") %>% 
+        mutate(count = ifelse(is.na(count), 100, count)))
+
+waffle_deaths <- waffle %>% 
+  filter(deaths !=0) %>% 
+  full_join(data.frame(etablissement_recu = unique(waffle$etablissement_recu))) %>% 
+  split(.$etablissement_recu) %>% 
+  map(~.x %>% 
+        full_join(waffle_fill, by = "year_week_factor2") %>% 
+        mutate(deaths = ifelse(is.na(deaths), 100, deaths)
+        )
+  )
 
 
-##### Cases reported in routine
+waffle_graphs <- map2(waffle_counts, waffle_deaths,
+    function(x,y){
+      
+      y_breaks_counts_breaks_a <- seq(floor(min(x$count) / 5), ceiling(max(x$count) / 5), by = 1)
+      
+      y_breaks_counts_breaks <- if(length(y_breaks_counts_breaks_a) > 3){seq(floor(min(x$count) / 5), ceiling(max(x$count) / 5), by = 2)} else {
+        y_breaks_counts_breaks_a}
+      y_breaks_counts_labs <- if(length(y_breaks_counts_breaks_a) > 3){seq(floor(min(x$count) / 5) * 5, ceiling(max(x$count) / 5) * 5, by = 10)} else {
+        seq(floor(min(x$count) / 5) * 5, ceiling(max(x$count) / 5) * 5, by = 5)
+      }
+      
+
+top <- x %>% 
+ggplot(aes(fill = waffle_cat, values = count)) +
+  geom_waffle(color = "white", size = .25, n_rows = 5, flip = TRUE) +
+  facet_wrap(~year_week_factor2, nrow = 1, strip.position = "top", drop = FALSE) +
+  scale_x_discrete(drop = FALSE) + 
+  scale_y_continuous(breaks = y_breaks_counts_breaks,
+                     labels =  y_breaks_counts_labs,#function(x) floor(x/5) + 5, 
+                     expand = c(0,0))+
+  scale_fill_identity()+
+  coord_fixed()+
+  theme_minimal()+
+  theme(
+    axis.title = element_blank(),
+    axis.text.x = element_blank(),
+    strip.text.x = element_text(size=8),
+    axis.text.y = element_text(size=8),
+    panel.grid.minor.y = element_blank(),
+
+  # Legend
+  legend.position = "top",
+  legend.title = element_blank(),
+  legend.spacing = unit(0.5, 'cm'),
+  legend.key.height= unit(0.5, 'cm'),
+  legend.key.width= unit(0.7, 'cm'),
+  legend.text = element_text(size=8,
+                             face = 'plain',
+                             color = "grey10"))
+
+if(all(is.na(y$waffle_cat))){bottom <-cowplot::ggdraw()+
+  cowplot::draw_text("No deaths reported from this facility")} else{
+    
+   y_breaks_deaths_breaks_a <- seq(floor(min(x$deaths, na.rm = TRUE)/5),
+                                       ceiling(max(x$deaths, na.rm = TRUE)/5),
+                                       by = 1)
+       
+   y_breaks_deaths_breaks <- if(length(y_breaks_deaths_breaks_a) > 3){seq(floor(min(x$deaths, na.rm = TRUE) / 5), ceiling(max(x$deaths, na.rm = TRUE) / 5), by = 2)} else {
+         y_breaks_deaths_breaks_a}
+       y_breaks_deaths_labs <- if(length(y_breaks_deaths_breaks_a) >  3){seq(floor(min(x$deaths, na.rm = TRUE) / 5) * 5, ceiling(max(x$deaths, na.rm = TRUE) / 5) * 5, by = 10)} else {
+         seq(floor(min(x$deaths, na.rm = TRUE) / 5) * 5, ceiling(max(x$deaths, na.rm = TRUE) / 5) * 5, by = 5)
+       }
+    
+                 
+                 bottom <- y %>% 
+ ggplot(aes(fill = waffle_cat, values = deaths)) +
+   geom_waffle(color = "white", size = .25, n_rows = 5, flip = TRUE) +
+  facet_wrap(~year_week_factor2, nrow = 1, strip.position = "bottom", drop = FALSE) +
+  scale_x_discrete(drop = FALSE) + 
+   scale_y_continuous(breaks = y_breaks_deaths_breaks,
+                     labels =  y_breaks_deaths_labs,
+                     expand = c(0,0))+
+   scale_fill_identity()+
+   coord_fixed()+
+   theme_minimal()+
+   theme(
+     axis.title = element_blank(),
+     strip.text.x = element_text(size = 8),
+     panel.grid.minor.y = element_blank(),
+     axis.text.y = element_text(size=8),
+   )
+}
+ 
+cowplot::plot_grid(top, NULL, NULL, bottom, ncol = 1, 
+                   rel_heights = c(2, -0.4, -0.4, 2),
+                   align = "hv", axis = "tblr", 
+                   labels = c("Cases", "Deaths", NULL, NULL))
+
+})
+
+
+
+waffle_graphs_new <- waffle_graphs %>% 
+  set_names(map(names(waffle_graphs), 
+                ~str_replace_all(str_to_title(str_replace_all(.x, "_", " ")), 
+                                 c("Csr" = "CSR", 
+                                   "Cs" = "CS", 
+                                   "Ps" = "PS", 
+                                   "Hgr" = "HGR"))
+                )
+                )
+
+```
+
+
+
+```{r results='asis'}
+
+
+ make_tab <- function(graph, name) {         # function to make the tabs
+   cat("::: {.panel}\n")                     # Open tab
+   cat("######", name, "{.panel-name}\n")    # Label tab
+ 
+   print(graph)                              # Display plot
+   
+   cat("\n")                                 # Space
+   cat(":::\n")                              # Close tab
+ }
+
+
+ 
+ walk2(waffle_graphs_new, names(waffle_graphs_new), ~make_tab(.x, .y))
+ 
+
+   
+```
+
+
+
+```{r}
+
+rm(waffle_graphs_new, waffle_graphs)
+
+```
+
+## **Deaths** {.tabset .tabset-pills}
+
+```{r}
+
+prop_var <- list("age_cat3",
+                 "sexe", 
+                 "etablissement_recu", 
+                 "any_antimalarial",
+                 "any_abx")
+
+death_explore <- map(list(data_6, 
+         mal, 
+         resp, 
+         resp_mal, 
+         unk,
+         other), 
+    function(z){map(prop_var, function(x){
+           y <- sym(x)
+           a <- z %>%
+             group_by(decede_non, {{y}}) %>% 
+             summarise(count = n()) %>% 
+             pivot_wider(names_from = "decede_non", 
+                         values_from = "count") %>% 
+             rename(category = 1) %>% 
+             mutate(across(where(is.logical), ~as.character(.x)))
+
+         return(a)
+           }) %>% 
+        set_names(prop_var) %>% 
+        list_rbind(names_to = "element") %>% 
+        mutate(across(c(decede, non_decede), ~replace_na(.x, 0))) %>% 
+        mutate(total = rowSums(select(., decede, non_decede)),
+               cfr = round(100*decede/total, 1), 
+               element = case_when(element == "age_cat3" ~ "Age (annees)", 
+                             element == "sexe" ~ "Sexe",
+                             element == "etablissement_recu" ~ "Formation Sanitaire",
+                             .default = element), 
+               category = case_when(category == "m" ~ "Masculin", 
+                              category == "f" ~ "Feminin", 
+                              .default = category)) %>% 
+        select(Variable = element, 
+               Groupe = category, 
+               `Total (nombre)` = total, 
+               `Taux de mortalite (%)` = cfr)}
+         ) %>% 
+  reduce(~left_join(.x, .y, by = c("Variable", "Groupe")))
+
+
+
+death_explore_chart_a <- death_explore %>% 
+  select(Variable, Groupe, starts_with("Taux")) %>% 
+  ungroup() %>% 
+  mutate(across(c(3:8), ~replace_na(.x, 0)), 
+         Groupe = str_to_title(str_replace_all(Groupe, "_", " ")), 
+         Groupe = str_replace_all(Groupe, c("Cs" = "CS", 
+                                            "Ps" = "PS"))) %>% 
+  rename(`Tous les cas` = 3, 
+         `Paludisme uniquement` = 4, 
+         `Maladie respiratoire` = 5, 
+         `Palu ET respiratoire` = 6, 
+         `Statut palu inconnu` = 7, 
+         `Autres` = 8)
+  
+death_explore_chart <- death_explore_chart_a %>% 
+  flextable::flextable() %>% 
+  flextable::add_header_row(values = c("", "Taux de Mortalite (%)"),
+                            colwidths = c(2, 6)) %>% 
+  flextable::autofit()
+
+death_explore_chart
+
+```
+
+```{r}
+
+hf_with_deaths <- death_explore_chart_a %>% 
+  filter(Variable == "Formation Sanitaire" & `Tous les cas` > 0 ) %>% 
+  mutate(Groupe = str_to_lower(str_replace_all(Groupe, " ", "_")))
+
+hf_with_deaths_full <- map(list(data_6, 
+         mal, 
+         resp, 
+         resp_mal, 
+         unk,
+         other),~.x %>% 
+           filter(decede_non == "decede") %>% 
+           mutate(etablissement_recu = str_to_title(str_replace_all(etablissement_recu, "_", " ")), 
+                  etablissement_recu = str_replace_all(etablissement_recu, c("Cs" = "CS", "Ps" = "PS"))) %>% 
+           group_by(year_week_factor, etablissement_recu) %>% 
+           summarise(count = n()) %>% 
+           ungroup() %>% 
+           complete(year_week_factor, etablissement_recu, fill = list(count = 0)) %>% 
+           split(.$etablissement_recu) %>% 
+           compact() %>% 
+           map2(names(.), ~ggplot(.x)+
+                  geom_col(aes(x = year_week_factor, y = count))+
+                  labs(title = .y,
+                       x = element_blank(), 
+                       y = "Nombre Deces")+
+                  theme(axis.text.x = element_blank())
+                ))
+
+combo_plot <- map(hf_with_deaths_full, ~cowplot::plot_grid(plotlist = .x, 
+                                                           ncol = 1))
+
+combo_plot[[1]]
+```
+
+```{r}
+
+qui_decede_week <- map(list(data_6, 
+         mal, 
+         resp, 
+         resp_mal, 
+         unk,
+         other),~.x %>% 
+           split(.$decede_non) %>% 
+           map(~.x %>% 
+           mutate(etablissement_recu = str_to_title(str_replace_all(etablissement_recu, "_", " ")), 
+                  etablissement_recu = str_replace_all(etablissement_recu, c("Cs" = "CS", "Ps" = "PS"))) %>% 
+           group_by(year_week_factor) %>% 
+           summarise(med_age = median(age_years, na.rm = TRUE), 
+                     med_duration = median(duration_symp_consult, na.rm = TRUE), 
+                     prop_antimal = round(100*sum(any_antimalarial == "TRUE", na.rm = TRUE)/
+                       sum(!is.na(any_antimalarial)),1),
+                     prop_abx = round(100*sum(any_abx == "TRUE", na.rm = TRUE)/
+                       sum(!is.na(any_abx)),1)
+                     )) %>% 
+           reduce(~left_join(.x, .y, "year_week_factor")
+                  )
+) %>% 
+  set_names("Tous Cas", "Palu seulement", 
+            "Respiratoire Seulement", "Palu + Resp", 
+            "Statut Palu inconnu", "Autres") %>% 
+  list_rbind(names_to = "Diagnostiques") %>% 
+  flextable::flextable() %>% 
+  flextable::set_header_labels(year_week_factor = "Semaine", 
+                               med_age.x = "Age médian\n(ans)",
+                               med_duration.x = "Durée avant soins\n(jours)", 
+                               prop_antimal.x = "Reçu antipaludéens\n(%)", 
+                               prop_abx.x = "Reçu des antibiotiques\n", 
+                               med_age.y = "Age médian\n(ans)",
+                               med_duration.y = "Durée avant soins\n(jours)", 
+                               prop_antimal.y = "Reçu antipaludéens\n(%)", 
+                               prop_abx.y = "Reçu des antibiotiques\n") %>% 
+  flextable::add_header_row(values = c("", "Décédés", "Non décédés"), 
+                            colwidths = c(2,4,4)) %>% 
+  flextable::vline(j = c(2,6))
+
+qui_decede_week                               
+                               
+```
+
+```{r}
+
+qui_decede_hf <- map(list(data_6, 
+         mal, 
+         resp, 
+         resp_mal, 
+         unk,
+         other),~.x %>% 
+           split(.$decede_non) %>% 
+           map(~.x %>% 
+           mutate(etablissement_recu = str_to_title(str_replace_all(etablissement_recu, "_", " ")), 
+                  etablissement_recu = str_replace_all(etablissement_recu, c("Cs" = "CS", "Ps" = "PS"))) %>% 
+           group_by(etablissement_recu) %>% 
+           summarise(med_age = round(median(age_years, na.rm = TRUE),1), 
+                     med_duration = median(duration_symp_consult, na.rm = TRUE), 
+                     prop_antimal = round(100*sum(any_antimalarial == "TRUE", na.rm = TRUE)/
+                       sum(!is.na(any_antimalarial)),1),
+                     prop_abx = round(100*sum(any_abx == "TRUE", na.rm = TRUE)/
+                       sum(!is.na(any_abx)),1)
+                     )) %>% 
+           reduce(~left_join(.x, .y, "etablissement_recu")
+                  )
+) %>% 
+  set_names("Tous Cas", "Palu seulement", 
+            "Respiratoire Seulement", "Palu + Resp", 
+            "Statut Palu inconnu", "Autres") %>% 
+  list_rbind(names_to = "Diagnostiques") %>% 
+  flextable::flextable() %>% 
+  flextable::set_header_labels(etablissement_recu = "Formation Sanitaire", 
+                               med_age.x = "Age médian\n(ans)",
+                               med_duration.x = "Durée avant soins\n(jours)", 
+                               prop_antimal.x = "Reçu antipaludéens\n(%)", 
+                               prop_abx.x = "Reçu des antibiotiques\n", 
+                               med_age.y = "Age médian\n(ans)",
+                               med_duration.y = "Durée avant soins\n(jours)", 
+                               prop_antimal.y = "Reçu antipaludéens\n(%)", 
+                               prop_abx.y = "Reçu des antibiotiques\n") %>% 
+  flextable::add_header_row(values = c("", "Décédés", "Non décédés"), 
+                            colwidths = c(2,4,4)) %>% 
+  flextable::vline(j = c(2,6))
+
+qui_decede_hf
+
+```
+
+### By diagnosis and age
+
+```{r}
+
+
+
+test1 %>% 
+  flextable::flextable() %>% 
+  flextable::set_header_labels(`Total (nombre).x` = "Total (nombre)",
+                               `Total (nombre).y` = "Total (nombre)", 
+                               `Total (nombre).x.x` = "Total (nombre)", 
+                               `Total (nombre).y.y` = "Total (nombre)", 
+                               `Total (nombre).x.x.x` = "Total (nombre)", 
+                               `Total (nombre).y.y.y` = "Total (nombre)", 
+                               `Taux de mortalite (%).x` =  "Taux de mortalite (%)",
+                               `Taux de mortalite (%).y` =  "Taux de mortalite (%)",
+                               `Taux de mortalite (%).x.x` =  "Taux de mortalite (%)",
+                               `Taux de mortalite (%).y.y` =  "Taux de mortalite (%)",
+                               `Taux de mortalite (%).x.x.x` =  "Taux de mortalite (%)",
+                               `Taux de mortalite (%).y.y.y` =  "Taux de mortalite (%)") %>% 
+  flextable::add_header_row(values = c("", "All data", "Malaria only", 
+                                       "Respiratory only", 
+                                       "Respiratory and Malaria", 
+                                       "TDR Unknown", 
+                                       "Other"), 
+                            colwidths = c(2, 2, 2, 2, 2, 2, 2)) %>% 
+  flextable::vline(j = c(4,6,8,10,12)) %>% 
+  flextable::autofit()
+
+
+
+```
+
+## **Routine data** {.tabset}
+
+### Routine data anomalies {.tabset .tabset-pills}
+Monthly confirmed malaria cases and number of tests performed are graphed for 
+each facility. Due to a high degree of data missingness
 
 ```{r}
 
@@ -3704,7 +4226,12 @@ ge_rm <- missing_counts %>%
   filter(ge_pos == rows & ge_et_tdr_pos == rows) %>% 
   pull(hf)
 
+```
 
+
+```{r eval = FALSE, echo = FALSE}
+
+# Determination of outliers/anomalous values without imputation
 
 ts <- routine_data_panzi_out %>% 
   mutate(month_year = factor(name, 
@@ -3905,7 +4432,10 @@ ggplot()+
 ```{r}
 #####       with imputation  ######################################
 
-
+lev <-  unlist(unlist(map(list(2022, 2023, 2024, 2025), 
+    function(x)map(seq(1,12,1), function(a)paste0(x, "_", a))
+)
+))
 # cases
 
 ts <- routine_data_panzi_out %>% 
@@ -4044,6 +4574,11 @@ a_new <- a_new_a %>%
   left_join(ll_monthly_summary, by = c("name_match", 
                                        "month_trans" = "month", 
                                        "year_trans" = "year"))
+
+x_axis <- a_new %>% 
+  distinct(month_trans,year_trans, .keep_all = TRUE) %>% 
+  pull(labels)
+
 
 dx_method <- ts_list %>% 
   group_by(hf) %>% 
@@ -4403,7 +4938,26 @@ walk2(filename, graphs,
 
 ```
 
+```{r results='asis'}
 
+ make_tab <- function(graph, name) {         # function to make the tabs
+   cat("::: {.panel}\n")                     # Open tab
+   cat("####", name, "{.panel-name}\n")    # Label tab
+ 
+   print(graph)                              # Display plot
+   
+   cat("\n")                                 # Space
+   cat(":::\n")                              # Close tab
+ }
+
+
+ 
+ walk2(graphs, hf_names, ~make_tab(.x, .y))
+ 
+
+```
+
+### Routine test positivity rates {.tabset .tabset-pills}
 
 ```{r}
 
@@ -4418,7 +4972,9 @@ tpr_impute <- a_new_2 %>%
                    "year_month")) %>% 
   ungroup() %>% 
   mutate(tpr = 100*value/total)
+
 library(wesanderson)
+
 tpr_impute_graph <- tpr_impute %>% 
   split(.$hf) %>% 
   map2(map(names(.), ~str_remove_all(.x, "kg ")), 
@@ -4448,168 +5004,29 @@ tpr_impute_graph <- tpr_impute %>%
        }
       )
 
-
-
-tpr_impute_graph[[3]]
+tpr_impute_graph[[1]]
 
 ```
-
-
-##### Waffles {.tabset .tabset-pills}
-
-```{r}
-
-data_6 <- rio::import("data_6.xlsx")
-
-waffle <- data_6 %>% 
-  mutate(year_week_factor1 = factor(str_replace_all(year_week_factor, "20", "'")), 
-         year_week_factor2 = fct_reorder(year_week_factor1, year_week_factor),
-    waffle_cat = case_when(tdr1 == "positif" & cough_fever != "both" ~ "#FFC051",# "Malaria only", 
-                                tdr1 == "negatif" & cough_fever == "both" ~ "#004878", #"Respiratory only", 
-                                tdr1 == "positif" & cough_fever == "both" ~ "#3B455F", #"Malaria and Respiratory", 
-                                tdr1 == "negatif" & cough_fever != "both" ~ "grey50", #"Other", 
-                                tdr1 == "unknown" ~ "#A62420", #"Malaria unknown", 
-                                .default = NA)) %>% 
- # filter(etablissement_recu == "hgr_panzi") %>% 
-  group_by(year_week_factor2, waffle_cat, etablissement_recu) %>% 
-  summarise(count = n(), 
-            deaths = sum(decede_non == "decede", na.rm = TRUE)) %>% 
-  ungroup()
-
-waffle_fill <- data.frame(year_week_factor2 = unique(waffle$year_week_factor2))
-  
-waffle_counts <- waffle %>% 
-  split(.$etablissement_recu) %>% 
-  map(~.x %>% 
-        full_join(waffle_fill, by = "year_week_factor2") %>% 
-        mutate(count = ifelse(is.na(count), 100, count)))
-
-waffle_deaths <- waffle %>% 
-  filter(deaths !=0) %>% 
-  full_join(data.frame(etablissement_recu = unique(waffle$etablissement_recu))) %>% 
-  split(.$etablissement_recu) %>% 
-  map(~.x %>% 
-        full_join(waffle_fill, by = "year_week_factor2") %>% 
-        mutate(deaths = ifelse(is.na(deaths), 100, deaths)
-        )
-  )
-
-
-waffle_graphs <- map2(waffle_counts, waffle_deaths,
-    function(x,y){
-      
-      y_breaks_counts_breaks_a <- seq(floor(min(x$count) / 5), ceiling(max(x$count) / 5), by = 1)
-      
-      y_breaks_counts_breaks <- if(length(y_breaks_counts_breaks_a) > 3){seq(floor(min(x$count) / 5), ceiling(max(x$count) / 5), by = 2)} else {
-        y_breaks_counts_breaks_a}
-      y_breaks_counts_labs <- if(length(y_breaks_counts_breaks_a) > 3){seq(floor(min(x$count) / 5) * 5, ceiling(max(x$count) / 5) * 5, by = 10)} else {
-        seq(floor(min(x$count) / 5) * 5, ceiling(max(x$count) / 5) * 5, by = 5)
-      }
-      
-
-top <- x %>% 
-ggplot(aes(fill = waffle_cat, values = count)) +
-  geom_waffle(color = "white", size = .25, n_rows = 5, flip = TRUE) +
-  facet_wrap(~year_week_factor2, nrow = 1, strip.position = "top", drop = FALSE) +
-  scale_x_discrete(drop = FALSE) + 
-  scale_y_continuous(breaks = y_breaks_counts_breaks,
-                     labels =  y_breaks_counts_labs,#function(x) floor(x/5) + 5, 
-                     expand = c(0,0))+
-  scale_fill_identity()+
-  coord_fixed()+
-  theme_minimal()+
-  theme(
-    axis.title = element_blank(),
-    axis.text.x = element_blank(),
-    strip.text.x = element_text(size=8),
-    axis.text.y = element_text(size=8),
-    panel.grid.minor.y = element_blank(),
-
-  # Legend
-  legend.position = "top",
-  legend.title = element_blank(),
-  legend.spacing = unit(0.5, 'cm'),
-  legend.key.height= unit(0.5, 'cm'),
-  legend.key.width= unit(0.7, 'cm'),
-  legend.text = element_text(size=8,
-                             face = 'plain',
-                             color = "grey10"))
-
-if(all(is.na(y$waffle_cat))){bottom <-cowplot::ggdraw()+
-  cowplot::draw_text("No deaths reported from this facility")} else{
-    
-   y_breaks_deaths_breaks_a <- seq(floor(min(x$deaths, na.rm = TRUE)/5),
-                                       ceiling(max(x$deaths, na.rm = TRUE)/5),
-                                       by = 1)
-       
-   y_breaks_deaths_breaks <- if(length(y_breaks_deaths_breaks_a) > 3){seq(floor(min(x$deaths, na.rm = TRUE) / 5), ceiling(max(x$deaths, na.rm = TRUE) / 5), by = 2)} else {
-         y_breaks_deaths_breaks_a}
-       y_breaks_deaths_labs <- if(length(y_breaks_deaths_breaks_a) >  3){seq(floor(min(x$deaths, na.rm = TRUE) / 5) * 5, ceiling(max(x$deaths, na.rm = TRUE) / 5) * 5, by = 10)} else {
-         seq(floor(min(x$deaths, na.rm = TRUE) / 5) * 5, ceiling(max(x$deaths, na.rm = TRUE) / 5) * 5, by = 5)
-       }
-    
-                 
-                 bottom <- y %>% 
- ggplot(aes(fill = waffle_cat, values = deaths)) +
-   geom_waffle(color = "white", size = .25, n_rows = 5, flip = TRUE) +
-  facet_wrap(~year_week_factor2, nrow = 1, strip.position = "bottom", drop = FALSE) +
-  scale_x_discrete(drop = FALSE) + 
-   scale_y_continuous(breaks = y_breaks_deaths_breaks,
-                     labels =  y_breaks_deaths_labs,
-                     expand = c(0,0))+
-   scale_fill_identity()+
-   coord_fixed()+
-   theme_minimal()+
-   theme(
-     axis.title = element_blank(),
-     strip.text.x = element_text(size = 8),
-     panel.grid.minor.y = element_blank(),
-     axis.text.y = element_text(size=8),
-   )
-}
- 
-cowplot::plot_grid(top, NULL, NULL, bottom, ncol = 1, 
-                   rel_heights = c(2, -0.4, -0.4, 2),
-                   align = "hv", axis = "tblr", 
-                   labels = c("Cases", "Deaths", NULL, NULL))
-
-})
-
-waffle_graphs[[2]]
-
-waffle_graphs_new <- waffle_graphs %>% 
-  set_names(map(names(waffle_graphs), 
-                ~str_replace_all(str_to_title(str_replace_all(.x, "_", " ")), 
-                                 c("Csr" = "CSR", 
-                                   "Cs" = "CS", 
-                                   "Ps" = "PS", 
-                                   "Hgr" = "HGR"))
-                )
-                )
-
-```
-
 
 
 ```{r results='asis'}
 
-
  make_tab <- function(graph, name) {         # function to make the tabs
-   cat("::: {.panel}\n")              # Open tab
-   cat("######", name, "{.panel-name}\n") # Label tab
+   cat("::: {.panel}\n")                     # Open tab
+   cat("####", name, "{.panel-name}\n")    # Label tab
  
-   print(graph)                                # Display plot
+   print(graph)                              # Display plot
    
-   cat("\n")                          # Space
-   cat(":::\n")                       # Close tab
+   cat("\n")                                 # Space
+   cat(":::\n")                              # Close tab
  }
 
 
  
- walk2(waffle_graphs_new, names(waffle_graphs_new), ~make_tab(.x, .y))
+ walk2(tpr_impute_graph , map(names(tpr_impute_graph), ~str_remove_all(.x, "kg ")),
+       ~make_tab(.x, .y))
  
 
-   
 ```
 
 
@@ -4664,236 +5081,7 @@ clifs_notes <- com_24 %>%
 
 ```
 
-## **Deaths** {.tabset .tabset-pills}
 
-```{r}
-
-prop_var <- list("age_cat3",
-                 "sexe", 
-                 "etablissement_recu", 
-                 "any_antimalarial",
-                 "any_abx")
-
-death_explore <- map(list(data_6, 
-         mal, 
-         resp, 
-         resp_mal, 
-         unk,
-         other), 
-    function(z){map(prop_var, function(x){
-           y <- sym(x)
-           a <- z %>%
-             group_by(decede_non, {{y}}) %>% 
-             summarise(count = n()) %>% 
-             pivot_wider(names_from = "decede_non", 
-                         values_from = "count") %>% 
-             rename(category = 1) %>% 
-             mutate(across(where(is.logical), ~as.character(.x)))
-
-         return(a)
-           }) %>% 
-        set_names(prop_var) %>% 
-        list_rbind(names_to = "element") %>% 
-        mutate(across(c(decede, non_decede), ~replace_na(.x, 0))) %>% 
-        mutate(total = rowSums(select(., decede, non_decede)),
-               cfr = round(100*decede/total, 1), 
-               element = case_when(element == "age_cat3" ~ "Age (annees)", 
-                             element == "sexe" ~ "Sexe",
-                             element == "etablissement_recu" ~ "Formation Sanitaire",
-                             .default = element), 
-               category = case_when(category == "m" ~ "Masculin", 
-                              category == "f" ~ "Feminin", 
-                              .default = category)) %>% 
-        select(Variable = element, 
-               Groupe = category, 
-               `Total (nombre)` = total, 
-               `Taux de mortalite (%)` = cfr)}
-         ) %>% 
-  reduce(~left_join(.x, .y, by = c("Variable", "Groupe")))
-
-
-
-death_explore_chart_a <- death_explore %>% 
-  select(Variable, Groupe, starts_with("Taux")) %>% 
-  ungroup() %>% 
-  mutate(across(c(3:8), ~replace_na(.x, 0)), 
-         Groupe = str_to_title(str_replace_all(Groupe, "_", " ")), 
-         Groupe = str_replace_all(Groupe, c("Cs" = "CS", 
-                                            "Ps" = "PS"))) %>% 
-  rename(`Tous les cas` = 3, 
-         `Paludisme uniquement` = 4, 
-         `Maladie respiratoire` = 5, 
-         `Palu ET respiratoire` = 6, 
-         `Statut palu inconnu` = 7, 
-         `Autres` = 8)
-  
-death_explore_chart <- death_explore_chart_a %>% 
-  flextable::flextable() %>% 
-  flextable::add_header_row(values = c("", "Taux de Mortalite (%)"),
-                            colwidths = c(2, 6)) %>% 
-  flextable::autofit()
-
-death_explore_chart
-
-```
-
-```{r}
-
-hf_with_deaths <- death_explore_chart_a %>% 
-  filter(Variable == "Formation Sanitaire" & `Tous les cas` > 0 ) %>% 
-  mutate(Groupe = str_to_lower(str_replace_all(Groupe, " ", "_")))
-
-hf_with_deaths_full <- map(list(data_6, 
-         mal, 
-         resp, 
-         resp_mal, 
-         unk,
-         other),~.x %>% 
-           filter(decede_non == "decede") %>% 
-           mutate(etablissement_recu = str_to_title(str_replace_all(etablissement_recu, "_", " ")), 
-                  etablissement_recu = str_replace_all(etablissement_recu, c("Cs" = "CS", "Ps" = "PS"))) %>% 
-           group_by(year_week_factor, etablissement_recu) %>% 
-           summarise(count = n()) %>% 
-           ungroup() %>% 
-           complete(year_week_factor, etablissement_recu, fill = list(count = 0)) %>% 
-           split(.$etablissement_recu) %>% 
-           compact() %>% 
-           map2(names(.), ~ggplot(.x)+
-                  geom_col(aes(x = year_week_factor, y = count))+
-                  labs(title = .y,
-                       x = element_blank(), 
-                       y = "Nombre Deces")+
-                  theme(axis.text.x = element_blank())
-                ))
-
-combo_plot <- map(hf_with_deaths_full, ~cowplot::plot_grid(plotlist = .x, 
-                                                           ncol = 1))
-
-combo_plot[[1]]
-```
-
-```{r}
-
-qui_decede_week <- map(list(data_6, 
-         mal, 
-         resp, 
-         resp_mal, 
-         unk,
-         other),~.x %>% 
-           split(.$decede_non) %>% 
-           map(~.x %>% 
-           mutate(etablissement_recu = str_to_title(str_replace_all(etablissement_recu, "_", " ")), 
-                  etablissement_recu = str_replace_all(etablissement_recu, c("Cs" = "CS", "Ps" = "PS"))) %>% 
-           group_by(year_week_factor) %>% 
-           summarise(med_age = median(age_years, na.rm = TRUE), 
-                     med_duration = median(duration_symp_consult, na.rm = TRUE), 
-                     prop_antimal = round(100*sum(any_antimalarial == "TRUE", na.rm = TRUE)/
-                       sum(!is.na(any_antimalarial)),1),
-                     prop_abx = round(100*sum(any_abx == "TRUE", na.rm = TRUE)/
-                       sum(!is.na(any_abx)),1)
-                     )) %>% 
-           reduce(~left_join(.x, .y, "year_week_factor")
-                  )
-) %>% 
-  set_names("Tous Cas", "Palu seulement", 
-            "Respiratoire Seulement", "Palu + Resp", 
-            "Statut Palu inconnu", "Autres") %>% 
-  list_rbind(names_to = "Diagnostiques") %>% 
-  flextable::flextable() %>% 
-  flextable::set_header_labels(year_week_factor = "Semaine", 
-                               med_age.x = "Age médian\n(ans)",
-                               med_duration.x = "Durée avant soins\n(jours)", 
-                               prop_antimal.x = "Reçu antipaludéens\n(%)", 
-                               prop_abx.x = "Reçu des antibiotiques\n", 
-                               med_age.y = "Age médian\n(ans)",
-                               med_duration.y = "Durée avant soins\n(jours)", 
-                               prop_antimal.y = "Reçu antipaludéens\n(%)", 
-                               prop_abx.y = "Reçu des antibiotiques\n") %>% 
-  flextable::add_header_row(values = c("", "Décédés", "Non décédés"), 
-                            colwidths = c(2,4,4)) %>% 
-  flextable::vline(j = c(2,6))
-
-qui_decede_week                               
-                               
-```
-
-```{r}
-
-qui_decede_hf <- map(list(data_6, 
-         mal, 
-         resp, 
-         resp_mal, 
-         unk,
-         other),~.x %>% 
-           split(.$decede_non) %>% 
-           map(~.x %>% 
-           mutate(etablissement_recu = str_to_title(str_replace_all(etablissement_recu, "_", " ")), 
-                  etablissement_recu = str_replace_all(etablissement_recu, c("Cs" = "CS", "Ps" = "PS"))) %>% 
-           group_by(etablissement_recu) %>% 
-           summarise(med_age = round(median(age_years, na.rm = TRUE),1), 
-                     med_duration = median(duration_symp_consult, na.rm = TRUE), 
-                     prop_antimal = round(100*sum(any_antimalarial == "TRUE", na.rm = TRUE)/
-                       sum(!is.na(any_antimalarial)),1),
-                     prop_abx = round(100*sum(any_abx == "TRUE", na.rm = TRUE)/
-                       sum(!is.na(any_abx)),1)
-                     )) %>% 
-           reduce(~left_join(.x, .y, "etablissement_recu")
-                  )
-) %>% 
-  set_names("Tous Cas", "Palu seulement", 
-            "Respiratoire Seulement", "Palu + Resp", 
-            "Statut Palu inconnu", "Autres") %>% 
-  list_rbind(names_to = "Diagnostiques") %>% 
-  flextable::flextable() %>% 
-  flextable::set_header_labels(etablissement_recu = "Formation Sanitaire", 
-                               med_age.x = "Age médian\n(ans)",
-                               med_duration.x = "Durée avant soins\n(jours)", 
-                               prop_antimal.x = "Reçu antipaludéens\n(%)", 
-                               prop_abx.x = "Reçu des antibiotiques\n", 
-                               med_age.y = "Age médian\n(ans)",
-                               med_duration.y = "Durée avant soins\n(jours)", 
-                               prop_antimal.y = "Reçu antipaludéens\n(%)", 
-                               prop_abx.y = "Reçu des antibiotiques\n") %>% 
-  flextable::add_header_row(values = c("", "Décédés", "Non décédés"), 
-                            colwidths = c(2,4,4)) %>% 
-  flextable::vline(j = c(2,6))
-
-qui_decede_hf
-
-```
-
-### By diagnosis and age
-
-```{r}
-
-
-
-test %>% 
-  flextable::flextable() %>% 
-  flextable::set_header_labels(`Total (nombre).x` = "Total (nombre)",
-                               `Total (nombre).y` = "Total (nombre)", 
-                               `Total (nombre).x.x` = "Total (nombre)", 
-                               `Total (nombre).y.y` = "Total (nombre)", 
-                               `Total (nombre).x.x.x` = "Total (nombre)", 
-                               `Total (nombre).y.y.y` = "Total (nombre)", 
-                               `Taux de mortalite (%).x` =  "Taux de mortalite (%)",
-                               `Taux de mortalite (%).y` =  "Taux de mortalite (%)",
-                               `Taux de mortalite (%).x.x` =  "Taux de mortalite (%)",
-                               `Taux de mortalite (%).y.y` =  "Taux de mortalite (%)",
-                               `Taux de mortalite (%).x.x.x` =  "Taux de mortalite (%)",
-                               `Taux de mortalite (%).y.y.y` =  "Taux de mortalite (%)") %>% 
-  flextable::add_header_row(values = c("", "All data", "Malaria only", 
-                                       "Respiratory only", 
-                                       "Respiratory and Malaria", 
-                                       "TDR Unknown", 
-                                       "Other"), 
-                            colwidths = c(2, 2, 2, 2, 2, 2, 2)) %>% 
-  flextable::vline(j = c(4,6,8,10,12)) %>% 
-  flextable::autofit()
-
-
-
-```
 
 ```{r eval=FALSE}
 
