@@ -326,29 +326,29 @@ fs1 <- geo_codes_dhis2 %>%
 
 
 
-a <- tm_shape(zds)+
-  tm_borders()+
-  tm_shape(fs)+
-  tm_dots(col = "highlight", 
-          palette = c("firebrick4", "cadetblue4"), 
-          size = 0.8)+
-  tm_text("name")+
-  tm_layout(frame = FALSE, 
-            legend.show = FALSE)
-
-a <- tm_shape(zds)+
-  tm_borders()+
-  tm_shape(fs1)+
-  tm_dots()+
-  tm_text("name")+
-  tm_layout(frame = FALSE, 
-            legend.show = FALSE)
-
-tmap_save(tm = a, filename = here::here("mb_presentation", "hf_map.png"), 
-          dpi = 700, 
-          width = 6, 
-          height = 4, units = "in")
-
+# a <- tm_shape(zds)+
+#   tm_borders()+
+#   tm_shape(fs)+
+#   tm_dots(col = "highlight", 
+#           palette = c("firebrick4", "cadetblue4"), 
+#           size = 0.8)+
+#   tm_text("name")+
+#   tm_layout(frame = FALSE, 
+#             legend.show = FALSE)
+# 
+# a <- tm_shape(zds)+
+#   tm_borders()+
+#   tm_shape(fs1)+
+#   tm_dots()+
+#   tm_text("name")+
+#   tm_layout(frame = FALSE, 
+#             legend.show = FALSE)
+# 
+# tmap_save(tm = a, filename = here::here("mb_presentation", "hf_map.png"), 
+#           dpi = 700, 
+#           width = 6, 
+#           height = 4, units = "in")
+# 
 
 al1 <- colorFactor(c(ochRe::ochre_palettes[["nolan_ned"]][[4]], 
                       ochRe::ochre_palettes[["nolan_ned"]][[5]]), domain = c(1, 2))
@@ -417,16 +417,16 @@ locations_button <- locations %>%
  downloadthis::download_this(
     output_name = "dhis2_locations_panzi",
     output_extension = ".xlsx",
-    button_label = "Location information",
+    button_label = "Routine data geographies",
     button_type = "default",
     has_icon = TRUE,
     icon = "fa-regular fa-arrow-down-to-line")
 
 ```
 
-```{r out.width= 700, out.height = 700}
+```{r eval = FALSE}
 
-leaflet::leaflet() %>%
+a <- leaflet::leaflet() %>%
   addProviderTiles(providers$Esri.WorldGrayCanvas) %>% 
   addMapPane("base", zIndex = 410) %>% 
   addMapPane("top", zIndex = 420) %>% 
@@ -458,8 +458,16 @@ leaflet::leaflet() %>%
                        overlayGroups = "Panzi Health Zone Mask", 
                options = layersControlOptions(collapsed = F))
 
+htmlwidgets::saveWidget(a, "intro_map.html")
 
 ```
+
+```{r, out.width= 950, out.height=950, echo=FALSE}
+
+knitr::include_url("intro_map.html")
+
+```
+
 
 ## **Data cleaning** {.tabset .tabset-pills}
 
@@ -482,25 +490,6 @@ the most recent of which is dated `r lab_last`.
 
 DHIS2 data contains `r nrow(routine_case_a1)` observations, the most distant of
 which is from `r routine_first` and the most recent is from `r routine_last`. 
-
-Information on the data elements pulled from DHIS to generate aggregate 
-indicators is listed below. Identifying information for reporting 
-units/geographies is provided in the downloadable Excel file.
-
-```{r echo = FALSE}
-
-dhis2_data
-
-```
-
-
-```{r echo=FALSE}
-
-locations_button
-
-```
-
-
 
 ### Data missingness
 
@@ -1020,6 +1009,28 @@ data5_c %>%
 village_spell_dl
 
 ```
+
+### Routine data
+
+Information on the data elements pulled from DHIS to generate aggregate 
+indicators is listed below. Identifying information for reporting 
+units/geographies is provided in the downloadable Excel file.
+
+```{r echo = FALSE}
+
+dhis2_data
+
+```
+
+
+```{r echo=FALSE}
+
+locations_button
+
+```
+
+
+
 
 ## **Presentation and outcomes** {.tabset .tabset-pills}
 
@@ -2566,13 +2577,11 @@ pyr_button
 
 ```
 
-#### Point de dispersion de la distribution des cas par rapport à la
-
-distribution de la population
+#### Point de dispersion de la distribution des cas par rapport à la distribution de la population
 
 Ce graphique est interactif.
 
-```{r out.width= 700, out.height = 700}
+```{r}
 
 drc_pop <- rio::import("population_structure.xlsx") %>% 
   select(c(3,5,7,9)) %>% 
@@ -2608,7 +2617,9 @@ age_pyr <- data5_a %>%
   left_join(select(drc_pyr, age_cat, name, perc_tot_pop), 
             by = c("age_cat3" = "age_cat", 
                    "sexe" = "name"))
+```
 
+```{r eval=FALSE}
 plot <- ggplot(age_pyr)+
   geom_abline(slope = 1,
               intercept = 0,
@@ -2623,10 +2634,19 @@ plot <- ggplot(age_pyr)+
   coord_fixed(xlim = c(0,15), 
                   ylim = c(0,15))
 
-plotly::ggplotly(plot, 
+age_coor <- plotly::ggplotly(plot, 
                  tooltip = "text")
 
+htmlwidgets::saveWidget(age_coor, "age_scatter.html")
+
 ```
+
+```{r out.height=850, out.width=850, echo=FALSE}
+
+knitr::include_url("age_scatter.html")
+
+```
+
 
 #### Répartition des cas de maladies individuelles par rapport à la répartition de la population.
 
@@ -3015,7 +3035,7 @@ temp1
 
 #### Map of cases by Week {.tabset .tabset-pills}
 
-```{r out.width= 700, out.height = 700}
+```{r eval = FALSE}
 
 fs1 <- fs %>% 
   mutate(type = case_when(str_detect(name, "Centre de Santé de Référence") ~ "csr", 
@@ -3196,7 +3216,6 @@ weekly_map <- function(x, y, z){
                     options = pathOptions(pane = "dots"), 
                     popup = leafpop::popupGraph(z),
                     group = "Cumulative Deaths") %>%   
-  addPopupGraphs(list(y), group = "Weekly Cases", width = 400, height = 400) %>% 
    addPolygons(
     data = sf::st_as_sf(zds),  fillOpacity = 0, smoothFactor = 0.5,
     color = "black", opacity = 1, weight = 0.8) %>% 
@@ -3218,6 +3237,21 @@ too_many_maps <- pmap(list(map, map_loop_cases, map_loop_deaths),
                         return(out)})
 
 
+map2(map(list("2024_W43", 
+          "2024_W44",
+          "2024_W45", 
+          "2024_W46", 
+          "2024_W47", 
+          "2024_W48",
+          "2024_W49", 
+          "2024_W50",
+          "2024_W51", 
+          "2024_W52", 
+          "2025_W01",
+          "2025_W02", 
+          "2025_W03", 
+          "2025_W04"), ~paste0(here::here(), "/", .x, ".html")),
+     too_many_maps, ~htmlwidgets::saveWidget(.y, .x))
 
 ```
 
@@ -3227,122 +3261,114 @@ too_many_maps <- pmap(list(map, map_loop_cases, map_loop_deaths),
 
 ##### 2024 W43
 
-```{r out.width= 700, out.height = 700}
+```{r, out.width= 950, out.height=950, echo=FALSE}
 
-too_many_maps[[1]]
+knitr::include_url("2024_W43.html")
 
 ```
 
 ##### 2024 W44
 
-```{r out.width= 700, out.height = 700}
+```{r, out.width= 950, out.height=950, echo=FALSE}
 
-too_many_maps[[2]]
+knitr::include_url("2024_W44.html")
 
 ```
 
 ##### 2024 W45
 
-```{r out.width= 700, out.height = 700}
+```{r, out.width= 950, out.height=950, echo=FALSE}
 
-too_many_maps[[3]]
+knitr::include_url("2024_W45.html")
 
 ```
 
 ##### 2024 W46
 
-```{r out.width= 700, out.height = 700}
+```{r, out.width= 950, out.height=950, echo=FALSE}
 
-too_many_maps[[4]]
+knitr::include_url("2024_W46.html")
 
 ```
 
 ##### 2024 W47
 
-```{r out.width= 700, out.height = 700}
+```{r, out.width= 950, out.height=950, echo=FALSE}
 
-too_many_maps[[5]]
+knitr::include_url("2024_W47.html")
 
 ```
 
 ##### 2024 W48
 
-```{r out.width= 700, out.height = 700}
+```{r, out.width= 950, out.height=950, echo=FALSE}
 
-too_many_maps[[6]]
+knitr::include_url("2024_W48.html")
 
 ```
 
 ##### 2024 W49
 
-```{r out.width= 700, out.height = 700}
+```{r, out.width= 950, out.height=950, echo=FALSE}
 
-too_many_maps[[7]]
+knitr::include_url("2024_W49.html")
 
 ```
 
 ##### 2024 W50
 
-```{r out.width= 700, out.height = 700}
+```{r, out.width= 950, out.height=950, echo=FALSE}
 
-too_many_maps[[8]]
+knitr::include_url("2024_W50.html")
 
 ```
 
 ##### 2024 W51
 
-```{r out.width= 700, out.height = 700}
+```{r, out.width= 950, out.height=950, echo=FALSE}
 
-too_many_maps[[9]]
+knitr::include_url("2024_W51.html")
 
 ```
 
 ##### 2024 W52
 
-```{r out.width= 700, out.height = 700}
+```{r, out.width= 950, out.height=950, echo=FALSE}
 
-too_many_maps[[10]]
+knitr::include_url("2024_W52.html")
 
 ```
 
 ##### 2025 W01
 
-```{r out.width= 700, out.height = 700}
+```{r, out.width= 950, out.height=950, echo=FALSE}
 
-too_many_maps[[11]]
+knitr::include_url("2025_W01.html")
 
 ```
 
 ##### 2025 W02
 
-```{r out.width= 700, out.height = 700}
+```{r, out.width= 950, out.height=950, echo=FALSE}
 
-too_many_maps[[12]]
+knitr::include_url("2025_W02.html")
 
 ```
 
 ##### 2025 W03
 
-```{r out.width= 700, out.height = 700}
+```{r, out.width= 950, out.height=950, echo=FALSE}
 
-too_many_maps[[13]]
+knitr::include_url("2025_W03.html")
 
 ```
 
 ##### 2025 W04
-```{r out.width= 700, out.height = 700}
+```{r, out.width= 950, out.height=950, echo=FALSE}
 
-too_many_maps[[14]]
-
-```
-
-```{r echo = FALSE, include = FALSE}
-
-rm(too_many_maps)
+knitr::include_url("2025_W04.html")
 
 ```
-
-
 
 #### Cases by HF
 
@@ -5231,7 +5257,7 @@ walk2(filename, graphs,
 
 ### Routine test positivity rates {.tabset .tabset-pills}
 
-```{r}
+```{r out.height=700, out.width=700}
 
 tpr_impute <- a_new_2 %>% 
   filter(outbreak != "grey") %>% 
@@ -5344,7 +5370,6 @@ tpr_impute_graph <- tpr_impute %>%
        }
       )
 
-tpr_impute_graph[[1]]
 
 ```
 
