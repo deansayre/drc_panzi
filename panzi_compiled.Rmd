@@ -830,7 +830,25 @@ data4 <- left_join(data3, treatment_list, by = "n") %>%
          complications = str_replace_all(complications, "broncho_pulmonaire", 
                                          "broncho.pulmonaire"))
 
+#Hmisc::describe(data4$any_artemisinins)
 
+# data4$any_artemisinins 
+#        n  missing distinct 
+#     3418     1448        2 
+#                       
+# Value      FALSE  TRUE
+# Frequency    582  2836
+# Proportion  0.17  0.83
+
+#Hmisc::describe(data4$any_antimalarial)
+
+# data4$any_antimalarial 
+#        n  missing distinct 
+#     4866        0        2 
+#                       
+# Value      FALSE  TRUE
+# Frequency   2023  2843
+# Proportion 0.416 0.584
 
 data_comp <- data4 %>% 
   select(n, complications) %>% 
@@ -873,8 +891,20 @@ comp_list <- data_comp_sp %>%
 #unique(data_comp_sp$list)
 
 data5 <- left_join(data4, comp_list, by = "n") %>% 
-  ungroup()
+  ungroup() %>% 
+  mutate(malnutrition = case_when(str_detect(autres_diagnostics, "malnutrition|mas")|str_detect(autres_signes, "amaigrissement|mas")|str_detect(complications, "malnutrition|mas|amaigrissement") ~ "malnutrition", 
+                                  .default = "no"))
 
+#  Hmisc::describe(data5$malnutrition)
+#  
+#  data5$malnutrition 
+#         n  missing distinct 
+#      4866        0        2 
+#                                      
+#  Value      malnutrition           no
+#  Frequency            73         4793
+#  Proportion        0.015        0.985
+#  
 
 comp_spell_dl <- complications_spelling %>% 
  downloadthis::download_this(
@@ -2240,7 +2270,6 @@ reflètent l'ensemble de la population concernée.
 ## **Epidemiological curves** {.tabset .tabset-pills}
 
 ```{r}
-
 data_6 <- data5_a %>% 
   select(n,
          date_de_notification,
@@ -2270,7 +2299,8 @@ data_6 <- data5_a %>%
          duration_symp_consult,  
          consult_pre_dec01,
          year_week_factor,
-         cough_fever) %>% 
+         cough_fever, 
+         malnutrition) %>% 
   mutate(etablissement_recu = case_match(etablissement_recu, 
                                          "communaute" ~ "none", 
                                          NA ~ "none",
@@ -3030,9 +3060,13 @@ test <- janitor::get_dupes(keep, etablissement_recu, year_week_factor)
 leaf_pop_1 <- sf::st_drop_geometry(keep) %>% 
   select(etablissement_recu,year_week_factor,num,deaths, cum_cases,cum_deaths) %>% 
   complete(etablissement_recu,year_week_factor,fill = list(num = 0,
-                                                                 deaths = 0,
-                                                                 cum_cases = 0,
-                                                                 cum_deaths = 0)) %>% 
+                                                                 deaths = 0)) %>% 
+  mutate(across(c(cum_cases, cum_deaths), ~case_when(year_week_factor == "2024 W43" & is.na(.x) ~ 0, 
+                                                     .default = .x))) %>% 
+  group_by(etablissement_recu) %>% 
+  fill(cum_cases, .direction = "down") %>% 
+  fill(cum_deaths, .direction = "down") %>% 
+  ungroup() %>% 
   left_join(select(sf::st_drop_geometry(keep), 
                    etablissement_recu, 
                    name)) %>% 
@@ -3177,50 +3211,14 @@ weekly_map <- function(x, y, z){
 
 
 too_many_maps <- pmap(list(map, map_loop_cases, map_loop_deaths),
-                      function(x,y,z)weekly_map(x,y,z))
+                      function(x,y,z){
+                        names(y) <- NULL
+                        names(z) <- NULL
+                        out <- weekly_map(x,y,z)
+                        return(out)})
 
-too_many_maps[[4]]
 
 
-pop <- map_loop_cases[[1]]
-names(pop) <- NULL
-
-leaflet::leaflet() %>% 
-   addProviderTiles(providers$Esri.WorldGrayCanvas) %>% 
-  addMapPane("fill", zIndex = 410) %>% 
-  addMapPane("dots", zIndex = 420) %>% 
-     addPolygons(
-    data = sf::st_as_sf(zds),  fillOpacity = 0, smoothFactor = 0.5,
-    color = "black", opacity = 1, weight = 0.8) %>% 
-   addCircleMarkers(data = map[[1]], 
-                    radius = ~sqrt(num),
-                    color = "#1e5597",
-                    fill = TRUE,
-                    fillOpacity = 0.5, 
-                    group = "Weekly Cases", 
-                    options = pathOptions(pane = "dots"), 
-    popup = leafpop::popupGraph(pop)) %>% 
-   addCircleMarkers(data = map[[1]], 
-                    radius = ~sqrt(cum_cases),
-                    color = "#1e5597",
-                    fill = TRUE,
-                    fillOpacity = 0.5, 
-                    group = "Cumulative Cases") %>% 
-   addCircleMarkers(data = map[[1]], 
-                    radius = ~sqrt(deaths),
-                    color = "#972b1e",
-                    stroke = FALSE, fillOpacity = 0.5, 
-                    group = "Weekly Deaths") %>% 
-   addCircleMarkers(data = map[[1]], 
-                    radius = ~sqrt(cum_deaths),
-                    color = "#972b1e",
-                    stroke = FALSE, fillOpacity = 0.5, 
-                    group = "Cumulative Deaths") %>%   
-    addLayersControl(baseGroups = c("Weekly Cases",
-                                    "Cumulative Cases",
-                                    "Weekly Deaths",
-                                    "Cumulative Deaths"),
-                     options = layersControlOptions(collapsed = F))
 ```
 
 
@@ -3677,18 +3675,28 @@ hf_with_deaths_full <- map(list(data_6,
            split(.$etablissement_recu) %>% 
            compact() %>% 
            map2(names(.), ~ggplot(.x)+
-                  geom_col(aes(x = year_week_factor, y = count))+
+                  geom_col(aes(x = year_week_factor, y = count), 
+                           fill = "firebrick4")+
                   labs(title = .y,
                        x = element_blank(), 
-                       y = "Nombre Deces")+
-                  theme(axis.text.x = element_blank())
+                       y = "Deaths")+
+                  scale_y_continuous(breaks = c(0,5,10,15))+
+                  theme(axis.text.x = element_blank(), 
+                        panel.grid.minor.y = element_blank())+
+                  coord_cartesian(ylim = c(0, 13))
                 ))
 
 combo_plot <- map(hf_with_deaths_full, ~cowplot::plot_grid(plotlist = .x, 
                                                            ncol = 1))
 
-combo_plot[[1]]
+
+ggsave(combo_plot[[1]], filename = here::here("facility_deaths.png"),
+       height = 20, 
+       width = 4, 
+       units = "in")
 ```
+
+![](C:/Users/omp2/OneDrive - CDC/drc_panzi/facility_deaths.png)
 
 ```{r}
 
@@ -3780,7 +3788,9 @@ qui_decede_hf
 
 ```
 
-### By diagnosis and age
+### By diagnosis and age {.tabset .tabset-pills}
+
+#### Table
 
 ```{r}
 
@@ -3810,6 +3820,268 @@ test1 %>%
   flextable::autofit()
 
 
+
+```
+
+#### Malaria and Respiratory
+
+```{r}
+#data_6a <- data_6 %>% 
+#  left_join(date_change, by = "n") %>% 
+#  mutate(debut_change = as.Date(debut_change), 
+#         consultation_change = as.Date(consultation_change),
+#         date_debut_des_signes.x = case_when(!is.na(debut_change)~ debut_change, 
+#                                             .default = date_debut_des_signes.x), 
+#         date_de_consultation.x = case_when(!is.na(consultation_change)~ #consultation_change, 
+#                                            .default = date_de_consultation.x)) %>% 
+#  select(-c(duration_symp_consult.x)) %>% 
+#  mutate(duration_symp_consult = lubridate::time_length(interval(date_debut_des_signes.x,
+#                                                                 date_de_consultation.x), 
+#                                                        "days"))
+#
+#test1 <- data_6 %>% 
+#  filter(duration_symp_consult < 0 |duration_symp_consult >34 ) 
+#
+
+plots <- data_6 %>% 
+  mutate(dz = case_when(tdr1 == "positif" & cough_fever != "both" ~ "Malaria only", 
+                        cough_fever == "both" & tdr1 == "negatif" ~ "Respiratory only",
+                        tdr1 == "positif" & cough_fever == "both" ~ "Malaria and Respiratory",
+                        tdr1 == "unknown" ~ "Malaria Unknown", 
+                        .default = "other")) %>% 
+  split(.$dz) 
+
+age_graphs <- plots %>% 
+  map2(names(.),
+       function(x,y){
+         
+         cases <- sum(x$decede_non == "non_decede")
+         deaths <- sum(x$decede_non == "decede")
+         
+        a <-  x %>% 
+        ggplot(aes(x = age_years, colour = decede_non))+
+        stat_ecdf(linewidth = 1.5)+
+        scale_color_manual(values = c("firebrick4", "cadetblue4"))+
+        scale_x_continuous(breaks = c(0,5,15,25,50,75, Inf))+  
+        theme_minimal()+
+         labs(title = y,
+              x = "Age (years)",
+              y = "Empirical Cumulative Distribution",
+              subtitle = paste0("Number surviving = ", cases,"\nNumber died = ", deaths))+
+          theme(legend.position = "none", 
+                panel.grid.minor.x = element_blank())
+          
+        
+        return(a)
+       }
+  )
+# if saving all
+
+#  filenames <- map(names(plots), 
+#                   ~paste0(here::here("mb_presentation", .x),"_age_distribution.png"))
+#  
+#  
+#  walk2(age_graphs, filenames, ~ggsave(filename = .y, plot = .x,
+#                                      dpi = 700, 
+#                                      width = 13.2, 
+#                                      height = 6.4, 
+#                                      units = "in")
+#  )
+
+age_graphs[["Malaria and Respiratory"]]
+
+```
+
+#### Malaria only
+```{r}
+
+age_graphs[["Malaria only"]]
+
+```
+
+
+#### Respiratory only
+```{r}
+
+age_graphs[["Respiratory only"]]
+
+```
+
+#### Malaria Unknown
+```{r}
+
+age_graphs[["Malaria Unknown"]]
+
+```
+
+
+### By diagnosis and duration of symptoms {.tabset .tabset-pills}
+
+#### Table
+
+#### Malaria and Respiratory
+
+```{r}
+
+duration_graphs <- plots %>% 
+  map(~.x %>% 
+        filter(duration_symp_consult > 0 & duration_symp_consult < 100)) %>% 
+  map2(names(.),
+       function(x,y){
+         
+         cases <- sum(x$decede_non == "non_decede")
+         deaths <- sum(x$decede_non == "decede")
+         
+         a <-  x %>% 
+           ggplot(aes(x = duration_symp_consult, colour = decede_non))+
+           stat_ecdf(linewidth = 1.5)+
+           scale_color_manual(values = c("firebrick4", "cadetblue4"))+
+           scale_x_continuous(breaks = c(0,1,2,3,4,5,10,15, 30,Inf))+  
+           theme_minimal()+
+           coord_cartesian(xlim = c(0, 35))+
+           labs(title = y,
+                x = "Duration illness onset to care (days)",
+                y = "Empirical Cumulative Distribution",
+                subtitle = paste0("Number surviving = ", cases,"\nNumber died = ", deaths))+
+           theme(legend.position = "none", 
+                 panel.grid.minor.x = element_blank())
+         
+         
+         return(a)
+       }
+  )
+  
+
+# if saving
+#   
+#   filenames <- map(names(plots), 
+#                    ~paste0(here::here("mb_presentation", .x),"_careseeking_distribution.png"))
+#   
+#   
+#   walk2(duration_graphs, filenames, ~ggsave(filename = .y, plot = .x,
+#                                        dpi = 700, 
+#                                        width = 13.2, 
+#                                        height = 6.4, 
+#                                        units = "in"))
+#         
+
+duration_graphs[["Malaria and Respiratory"]]
+
+```
+
+#### Malaria only
+```{r}
+
+duration_graphs[["Malaria only"]]
+
+```
+
+
+#### Respiratory only
+```{r}
+
+duration_graphs[["Respiratory only"]]
+
+```
+
+#### Malaria Unknown
+```{r}
+
+duration_graphs[["Malaria Unknown"]]
+
+```
+
+### By diagnosis and documented treatments/complications {.tabset .tabset-pills}
+
+#### Table
+
+#### Malaria and Respiratory
+```{r}      
+
+antimal_graphs <- plots %>% 
+        map(~.x %>% 
+              mutate(any_artemisinins = case_when(is.na(any_artemisinins) ~ FALSE, 
+                                                  .default = any_artemisinins)) %>% 
+             # filter(!is.na(any_artemisinins)) %>% 
+              group_by(decede_non) %>% 
+              summarise(`Any antimalarial` = 100*sum(any_antimalarial == TRUE)/(sum(any_antimalarial == TRUE)+
+                                                                    sum(any_antimalarial == FALSE)), 
+                        `Any artemisinin` = 100*sum(any_artemisinins == TRUE, 
+                                      na.rm = TRUE)/(sum(any_artemisinins == TRUE, 
+                                                         na.rm = TRUE)+
+                                                       sum(any_artemisinins == FALSE, 
+                                                           na.rm = TRUE)),
+                        `Any antibiotic` = 100*sum(any_abx == TRUE)/(sum(any_abx == TRUE)+
+                                                        sum(any_abx == FALSE)),
+                        Malnutrition = 100*sum(malnutrition == "malnutrition")/(sum(malnutrition == "malnutrition")+
+                                                        sum(malnutrition == "no"))) %>% 
+              ungroup() %>% 
+              pivot_longer(-decede_non) %>% 
+              mutate(name = factor(name, levels = c("Any antimalarial", 
+                                                    "Any artemisinin", 
+                                                    "Any antibiotic", 
+                                                    "Malnutrition")))
+            )%>% 
+        map2(names(.),
+             function(x,y){
+               
+               
+               a <-  x %>% 
+                 ggplot(aes(x = name, y = value, 
+                            group = decede_non, fill = decede_non))+
+                 geom_col(color = "grey35", 
+                          position = "dodge")+
+                 scale_fill_manual(values = c("firebrick4", "cadetblue4"))+
+                 theme_minimal()+
+                 coord_cartesian(ylim = c(0,100))+
+                 labs(title = y,
+                      x = element_blank(),
+                      y = "Percentage")+
+                 theme(legend.position = "none")
+               
+               
+               return(a)
+             }
+        )
+
+#filenames <- map(names(plots), 
+#                       ~paste0(here::here("mb_presentation", .x),"_antimal_drug.png"))
+#      
+#      
+#walk2(antimal_graphs, filenames, ~ggsave(filename = .y, plot = .x,
+#                                                dpi = 700, 
+#                                                width = 13.2, 
+#                                                height = 6.4, 
+#                                                units = "in")      
+#)
+#
+#
+
+
+
+antimal_graphs[[1]]
+
+```
+
+#### Malaria only
+```{r}
+
+antimal_graphs[["Malaria only"]]
+
+```
+
+
+#### Respiratory only
+```{r}
+
+antimal_graphs[["Respiratory only"]]
+
+```
+
+#### Malaria Unknown
+```{r}
+
+antimal_graphs[["Malaria Unknown"]]
 
 ```
 
@@ -4972,6 +5244,74 @@ tpr_impute <- a_new_2 %>%
                    "year_month")) %>% 
   ungroup() %>% 
   mutate(tpr = 100*value/total)
+
+
+levels <- map(list("2022", "2023", "2024"), 
+              function(x)map(list("Jan", "Feb", "Mar", 
+                                  "Apr", "May", "June", 
+                                  "July", "Aug", "Sept", 
+                                  "Oct", "Nov", "Dec"), 
+                             function(y)paste0(x, " ", y))) %>% 
+  unlist()
+
+tpr_change_overall <- tpr_impute %>% 
+  split(.$hf) %>%
+  map(~.x %>% 
+  arrange(year_month) %>% 
+  mutate(lag_tpr = lag(tpr), 
+         delta = tpr - lag_tpr)) %>% 
+  list_rbind() %>% 
+  group_by(year_month) %>% 
+  mutate(mean = mean(delta, na.rm = TRUE)) %>% 
+  ungroup() %>% 
+  filter(!is.na(lag_tpr)) %>% 
+  select(-c(value, total, tpr, lag_tpr)) %>% 
+  pivot_longer(-c(1,2)) %>% 
+  mutate(year_month = factor(year_month), 
+         hf = case_when(name == "mean" ~ "Mean", 
+                        .default = hf),
+         hf = str_remove_all(hf, "kg "),
+         value = round(value, 1), 
+         `Year Month` = str_replace_all(year_month, c("_12" = " Dec", 
+                                                             "_11" = " Nov", 
+                                                             "_10" = " Oct")), 
+         `Year Month` = str_replace_all(`Year Month`, c("_1" = " Jan", 
+                                                        "_2" = " Feb", 
+                                                        "_3" = " Mar", 
+                                                        "_4" = " Apr", 
+                                                        "_5" = " May", 
+                                                        "_6" = " June", 
+                                                        "_7" = " July", 
+                                                        "_8" = " Aug", 
+                                                        "_9" = " Sept")), 
+         `Year Month` = factor(`Year Month`, 
+                               levels = levels)) %>% 
+  distinct(hf, year_month, .keep_all = TRUE)
+
+
+  
+
+a <- ggplot(tpr_change_overall)+
+  geom_line(aes(x = `Year Month`, 
+                y = value, 
+                group = hf, 
+                color = name, 
+                linewidth = name, 
+                alpha = name))+
+  scale_color_manual(values = c("grey35", 
+                                  "cadetblue4"))+
+  scale_linewidth_manual(values = c(0.3, 2))+
+  theme_minimal()+
+  labs(x = "Month", 
+       y = "Absolute monthly change in TPR (Δ%)")+
+  theme(legend.position = 'none', 
+        axis.text.x = element_text(angle = 90))
+
+plotly::ggplotly(a, tooltip = c("x", "y", "group"))
+
+```
+
+```{r}
 
 library(wesanderson)
 
